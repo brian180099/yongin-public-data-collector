@@ -1,13 +1,17 @@
 import hashlib
 import json
+from pathlib import Path
 
 import httpx
 
 from yongin_collector.collect import (
-    _api_items, collect_api, discover_files, validate_download,
+    _api_items, collect_api, collect_portal_file, discover_files, validate_download,
 )
 from yongin_collector.sources import DEFAULT_SOURCE_IDS, Source
 from yongin_collector.store import Store
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_discovery_only_accepts_configured_portal_id():
@@ -44,6 +48,15 @@ def test_rejects_html_disguised_as_csv():
         raise AssertionError("HTML error page must not be stored as CSV")
 
 
+def test_rejects_pk_bytes_disguised_as_xlsx():
+    try:
+        validate_download(b"PK\x03\x04not-a-real-zip", "xlsx")
+    except ValueError as exc:
+        assert "XLSX" in str(exc)
+    else:
+        raise AssertionError("invalid ZIP bytes must not be stored as XLSX")
+
+
 def test_mvp_allowlist_has_csv_file_and_api():
     assert DEFAULT_SOURCE_IDS == (
         "giheung_events", "library_new_books", "public_facilities"
@@ -54,7 +67,9 @@ def test_mvp_allowlist_has_csv_file_and_api():
 def test_api_rejects_other_city_before_storing(tmp_path):
     source = Source("public_facilities", "api", "https://example.org/api")
     payload = {"response": {"header": {"resultCode": "00"},
-                            "body": {"items": [{"rdnmadr": "서울특별시"}],
+                            "body": {"items": [{"rdnmadr": "서울특별시",
+                                                 "lnmadr": "서울특별시",
+                                                 "referenceDate": "2026-01-01"}],
                                      "totalCount": 1}}}
     def handler(request):
         return httpx.Response(200, json=payload)
@@ -74,3 +89,153 @@ def test_api_item_shape():
         "rdnmadr": "경기도 용인시 수지구"}}, "totalCount": "1"}}})
     assert count == 1
     assert len(rows) == 1
+
+
+def _portal_html(*detail_ids: str) -> str:
+    return "".join(
+        f"fileDetailObj.fn_fileDataDown('123', '{detail}', '','{number}', '1')"
+        for number, detail in enumerate(detail_ids, start=1)
+    )
+
+
+def test_portal_file_initial_rerun_change_and_partial_failure(tmp_path):
+    source = Source("files", "portal_file", "https://example.org/detail", "123")
+    current = {"1": b"name,city\npark,Yongin\n"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == source.url:
+            return httpx.Response(200, text=_portal_html("detail-a"))
+        if request.url.path.endswith("selectFileDataDownload.do"):
+            number = request.url.params["fileDetailSn"]
+            return httpx.Response(200, json={
+                "status": True, "atchFileId": "attachment",
+                "fileDetailSn": number,
+                "dataSetFileDetailInfo": {"dataNm": f"sample_2026110{number}.csv"},
+            })
+        if request.url.path.endswith("check-limit.json"):
+            return httpx.Response(200, json={"needCaptcha": False})
+        if request.url.path.endswith("fileDownload.do"):
+            number = request.url.params["fileDetailSn"]
+            return httpx.Response(
+                200, content=current[number],
+                headers={"content-disposition":
+                         f'attachment; filename="sample_2026110{number}.csv"'},
+            )
+        raise AssertionError(f"unexpected request: {request.url}")
+
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        first = collect_portal_file(source, store, client, refresh_existing=True)
+        assert first == {"source": "files", "found": 1, "saved": 1, "unchanged": 0}
+        first_hash = store.manifest("files")["items"]["detail-a:1:1"]["sha256"]
+
+        rerun = collect_portal_file(source, store, client, refresh_existing=True)
+        assert rerun["saved"] == 0
+        assert rerun["unchanged"] == 1
+
+        current["1"] = b"name,city\npool,Yongin\n"
+        changed = collect_portal_file(source, store, client, refresh_existing=True)
+        assert changed["saved"] == 1
+        assert store.manifest("files")["items"]["detail-a:1:1"]["sha256"] != first_hash
+        assert (tmp_path / "raw" / "files" / f"{first_hash}.csv").exists()
+
+        stable_manifest = store.manifest("files")
+
+        def failing_handler(request: httpx.Request) -> httpx.Response:
+            if str(request.url) == source.url:
+                return httpx.Response(200, text=_portal_html("detail-a", "detail-b"))
+            if request.url.path.endswith("selectFileDataDownload.do"):
+                number = request.url.params["fileDetailSn"]
+                return httpx.Response(200, json={
+                    "status": True, "atchFileId": "attachment",
+                    "fileDetailSn": number,
+                    "dataSetFileDetailInfo": {"dataNm": f"sample_2026110{number}.csv"},
+                })
+            if request.url.path.endswith("check-limit.json"):
+                return httpx.Response(200, json={"needCaptcha": False})
+            number = request.url.params["fileDetailSn"]
+            content = (b"name,city\nchanged,Yongin\n" if number == "1"
+                       else b"<!doctype html><html>error</html>")
+            return httpx.Response(200, content=content, headers={
+                "content-disposition":
+                    f'attachment; filename="sample_2026110{number}.csv"'
+            })
+
+        with httpx.Client(transport=httpx.MockTransport(failing_handler)) as failing:
+            try:
+                collect_portal_file(source, store, failing, refresh_existing=True)
+            except ValueError as exc:
+                assert "HTML" in str(exc)
+            else:
+                raise AssertionError("second-file failure must fail the whole collection")
+        assert store.manifest("files") == stable_manifest
+
+
+def test_api_stores_response_shape_counts_and_reference_dates(tmp_path):
+    source = Source("public_facilities", "api", "https://example.org/api")
+    items = [
+        {"rdnmadr": "경기도 용인시 수지구", "lnmadr": "",
+         "referenceDate": "2026-10-01", "openFcltyNm": "회의실"},
+        {"rdnmadr": "", "lnmadr": "경기도 용인시 기흥구",
+         "referenceDate": "2026-10-02", "openFcltyNm": "체육관"},
+    ]
+    payload = {"response": {"header": {"resultCode": "00"},
+                            "body": {"items": items, "totalCount": 2}}}
+
+    def handler(request):
+        assert request.url.params["serviceKey"] == "secret"
+        return httpx.Response(200, json=payload)
+
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = collect_api(source, store, client, "secret")
+    assert result == {"source": "public_facilities", "found": 2, "saved": 1,
+                      "unchanged": 0, "pages": 1, "total_count": 2,
+                      "field_count": 4}
+    metadata = store.manifest("public_facilities")["items"]["page_1"]
+    assert metadata["reference_date"] == "2026-10-02"
+    assert metadata["http_status"] == 200
+    assert metadata["response"]["record_count"] == 2
+    assert metadata["response"]["reference_dates"] == ["2026-10-01", "2026-10-02"]
+    assert "secret" not in json.dumps(metadata, ensure_ascii=False)
+
+
+def test_failed_api_pagination_does_not_commit_first_page(tmp_path):
+    source = Source("public_facilities", "api", "https://example.org/api")
+    valid = {"rdnmadr": "경기도 용인시", "lnmadr": "",
+             "referenceDate": "2026-10-01"}
+
+    def handler(request):
+        page = int(request.url.params["pageNo"])
+        items = [valid] * 1000 if page == 1 else [{"rdnmadr": "서울특별시"}]
+        return httpx.Response(200, json={
+            "response": {"header": {"resultCode": "00"},
+                         "body": {"items": items, "totalCount": 1001}}
+        })
+
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        try:
+            collect_api(source, store, client, "secret")
+        except ValueError as exc:
+            assert "required facility fields" in str(exc)
+        else:
+            raise AssertionError("invalid second page must fail the whole collection")
+    assert store.manifest("public_facilities")["items"] == {}
+
+
+def test_n8n_daily_template_is_inactive_key_free_and_kst():
+    path = ROOT / "workflows" / "n8n" / "daily-collector.json"
+    workflow = json.loads(path.read_text(encoding="utf-8"))
+    serialized = json.dumps(workflow)
+    assert workflow["active"] is False
+    assert workflow["settings"]["timezone"] == "Asia/Seoul"
+    schedule = next(node for node in workflow["nodes"]
+                    if node["type"] == "n8n-nodes-base.scheduleTrigger")
+    interval = schedule["parameters"]["rule"]["interval"][0]
+    assert interval["field"] == "days"
+    assert interval["triggerAtHour"] == 7
+    command = next(node for node in workflow["nodes"]
+                   if node["type"] == "n8n-nodes-base.executeCommand")
+    assert "python -m yongin_collector daily" in command["parameters"]["command"]
+    assert "DATA_GO_KR_SERVICE_KEY" not in serialized

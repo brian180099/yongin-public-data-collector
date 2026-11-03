@@ -4,6 +4,7 @@ import hashlib
 import csv
 import io
 import re
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +21,7 @@ FILE_CALL = re.compile(
     r"\s*'([^']+)',\s*'([^']+)'\)"
 )
 DATE_IN_NAME = re.compile(r"(?<!\d)(20\d{6})(?!\d)")
+API_REQUIRED_FIELDS = {"rdnmadr", "lnmadr", "referenceDate"}
 
 
 @dataclass(frozen=True)
@@ -51,6 +53,16 @@ def validate_download(content: bytes, extension: str) -> None:
         raise ValueError("empty download")
     if extension == "xlsx" and not content.startswith(b"PK\x03\x04"):
         raise ValueError("XLSX signature mismatch")
+    if extension == "xlsx":
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                names = set(archive.namelist())
+                if not {"[Content_Types].xml", "xl/workbook.xml"}.issubset(names):
+                    raise ValueError("XLSX workbook structure missing")
+                if archive.testzip() is not None:
+                    raise ValueError("XLSX archive contains corrupt data")
+        except zipfile.BadZipFile as exc:
+            raise ValueError("XLSX archive is invalid") from exc
     if extension == "xls" and not content.startswith(bytes.fromhex("D0CF11E0")):
         raise ValueError("XLS signature mismatch")
     if extension == "csv":
@@ -92,7 +104,8 @@ def collect_page(source: Source, store: Store, client: httpx.Client) -> dict:
         return {"source": source.source_id, "found": 1, "saved": 0, "unchanged": 1}
     store.save(source_id=source.source_id, item_id="current", content=response.content,
                extension="html", source_url=source.url, fingerprint=digest,
-               content_type=response.headers.get("content-type"))
+               content_type=response.headers.get("content-type"),
+               http_status=response.status_code)
     return {"source": source.source_id, "found": 1, "saved": 1, "unchanged": 0}
 
 
@@ -104,6 +117,8 @@ def collect_portal_file(source: Source, store: Store, client: httpx.Client,
     if not candidates:
         raise ValueError("no downloadable file buttons; source may now be an external link")
     saved = unchanged = 0
+    pending: list[dict] = []
+    manifest = store.manifest(source.source_id)
     for candidate in candidates:
         if not refresh_existing and store.known(source.source_id, candidate.item_id):
             unchanged += 1
@@ -140,16 +155,22 @@ def collect_portal_file(source: Source, store: Store, client: httpx.Client,
         validate_download(download.content, extension)
         current_hash = hashlib.sha256(download.content).hexdigest()
         if store.known(source.source_id, candidate.item_id):
-            previous = store.manifest(source.source_id)["items"][candidate.item_id]
+            previous = manifest["items"][candidate.item_id]
             if previous["sha256"] == current_hash:
                 unchanged += 1
                 continue
-        store.save(source_id=source.source_id, item_id=candidate.item_id,
-                   content=download.content, extension=extension, source_url=source.url,
-                   original_filename=name, reference_date=reference_date_from_name(name),
-                   fingerprint=f"{attachment}:{file_no}",
-                   content_type=download.headers.get("content-type"))
+        pending.append({
+            "item_id": candidate.item_id, "content": download.content,
+            "extension": extension, "source_url": source.url,
+            "original_filename": name,
+            "reference_date": reference_date_from_name(name),
+            "fingerprint": f"{attachment}:{file_no}",
+            "content_type": download.headers.get("content-type"),
+            "http_status": download.status_code,
+        })
         saved += 1
+    if pending:
+        store.save_many(source.source_id, pending)
     return {"source": source.source_id, "found": len(candidates),
             "saved": saved, "unchanged": unchanged}
 
@@ -174,6 +195,10 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
     if not service_key:
         raise ValueError("DATA_GO_KR_SERVICE_KEY is missing")
     saved = unchanged = found = 0
+    expected_total: int | None = None
+    pending: list[dict] = []
+    field_names: set[str] = set()
+    pages = 0
     for page_no in range(1, max_pages + 1):
         # The source API documents rdnmadr as a filter. Reject non-Yongin
         # records as well, in case server-side filter semantics change.
@@ -185,30 +210,68 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
         if "OpenAPI_ServiceResponse" in payload:
             raise ValueError("public-data API authentication or quota error")
         items, total = _api_items(payload)
+        if expected_total is None:
+            expected_total = total
+            required_pages = max(1, (total + 999) // 1000)
+            if required_pages > max_pages:
+                raise ValueError(
+                    f"API result requires {required_pages} pages; configured cap is {max_pages}"
+                )
+        elif total != expected_total:
+            raise ValueError("API totalCount changed during paginated collection")
         if not items:
             if page_no == 1:
                 raise ValueError("no Yongin records returned by API")
             break
-        if any("용인시" not in str(item.get("rdnmadr", "")) for item in items):
+        if any(not API_REQUIRED_FIELDS.issubset(item) for item in items):
+            raise ValueError("API response is missing required facility fields")
+        if any("용인시" not in (
+            str(item.get("rdnmadr", "")) + str(item.get("lnmadr", ""))
+        ) for item in items):
             raise ValueError("API returned records outside Yongin or missing addresses")
+        page_fields = set().union(*(item.keys() for item in items))
+        field_names.update(page_fields)
         found += len(items)
+        pages += 1
         # Preserve the original JSON response; never add the key to metadata.
         digest = hashlib.sha256(response.content).hexdigest()
         item_id = f"page_{page_no}"
         if store.known(source.source_id, item_id, digest):
             unchanged += 1
         else:
-            store.save(source_id=source.source_id, item_id=item_id,
-                       content=response.content, extension="json",
-                       source_url=source.url, fingerprint=digest,
-                       content_type=response.headers.get("content-type"))
+            reference_dates = sorted({
+                str(item["referenceDate"]) for item in items
+                if item.get("referenceDate") not in (None, "")
+            })
+            pending.append({
+                "item_id": item_id, "content": response.content,
+                "extension": "json", "source_url": source.url,
+                "reference_date": reference_dates[-1] if reference_dates else None,
+                "fingerprint": digest,
+                "content_type": response.headers.get("content-type"),
+                "http_status": response.status_code,
+                "response_metadata": {
+                    "page_no": page_no, "record_count": len(items),
+                    "total_count": total,
+                    "field_names": sorted(page_fields),
+                    "reference_dates": reference_dates,
+                    "address_filter": "용인시",
+                },
+            })
             saved += 1
         if page_no * 1000 >= total:
             break
     else:
         raise ValueError(f"API result exceeds {max_pages} pages; increase cap explicitly")
+    if expected_total is not None and found != expected_total:
+        raise ValueError(
+            f"API pagination count mismatch: expected {expected_total}, received {found}"
+        )
+    if pending:
+        store.save_many(source.source_id, pending)
     return {"source": source.source_id, "found": found, "saved": saved,
-            "unchanged": unchanged}
+            "unchanged": unchanged, "pages": pages,
+            "total_count": expected_total, "field_count": len(field_names)}
 
 
 def collect(source: Source, store: Store, service_key: str | None,

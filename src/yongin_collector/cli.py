@@ -39,7 +39,7 @@ def main() -> int:
     for source in selected:
         try:
             result = collect(source, store, key, mode=args.mode)
-            store.record_checked(source.source_id)
+            store.record_checked(source.source_id, result)
             print(json.dumps(result, ensure_ascii=False))
         except Exception as exc:
             # Never log the exception string: HTTP URLs can contain the API key.

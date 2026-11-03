@@ -37,8 +37,14 @@ class Store:
         path = self.state / f"{source_id}.json"
         if not path.exists():
             return {"source_id": source_id, "items": {}, "last_checked_at": None,
-                    "last_error": None}
-        return json.loads(path.read_text(encoding="utf-8"))
+                    "last_error": None, "runs": []}
+        state = json.loads(path.read_text(encoding="utf-8"))
+        # Keep manifests written by older collector versions readable.
+        state.setdefault("items", {})
+        state.setdefault("runs", [])
+        state.setdefault("last_checked_at", None)
+        state.setdefault("last_error", None)
+        return state
 
     def save_manifest(self, source_id: str, manifest: dict) -> None:
         atomic_write(self.state / f"{source_id}.json",
@@ -46,14 +52,22 @@ class Store:
 
     def record_error(self, source_id: str, message: str) -> None:
         state = self.manifest(source_id)
-        state["last_checked_at"] = datetime.now(KST).isoformat()
+        checked_at = datetime.now(KST).isoformat()
+        state["last_checked_at"] = checked_at
         state["last_error"] = message
+        state["runs"].append({"checked_at": checked_at, "status": "failed",
+                              "error": message})
         self.save_manifest(source_id, state)
 
-    def record_checked(self, source_id: str) -> None:
+    def record_checked(self, source_id: str, result: dict | None = None) -> None:
         state = self.manifest(source_id)
-        state["last_checked_at"] = datetime.now(KST).isoformat()
+        checked_at = datetime.now(KST).isoformat()
+        state["last_checked_at"] = checked_at
         state["last_error"] = None
+        run = {"checked_at": checked_at, "status": "success"}
+        if result is not None:
+            run["result"] = result
+        state["runs"].append(run)
         self.save_manifest(source_id, state)
 
     def known(self, source_id: str, item_id: str, fingerprint: str | None = None) -> bool:
@@ -66,27 +80,59 @@ class Store:
     def save(self, *, source_id: str, item_id: str, content: bytes, extension: str,
              source_url: str, original_filename: str | None = None,
              reference_date: str | None = None, fingerprint: str | None = None,
-             content_type: str | None = None) -> str:
-        if not SAFE_ID.fullmatch(source_id) or not SAFE_ID.fullmatch(extension):
-            raise ValueError("unsafe source id or extension")
-        if not content:
-            raise ValueError("empty response")
-        digest = hashlib.sha256(content).hexdigest()
+             content_type: str | None = None, http_status: int | None = None,
+             response_metadata: dict | None = None) -> str:
+        return self.save_many(source_id, [{
+            "item_id": item_id, "content": content, "extension": extension,
+            "source_url": source_url, "original_filename": original_filename,
+            "reference_date": reference_date, "fingerprint": fingerprint,
+            "content_type": content_type, "http_status": http_status,
+            "response_metadata": response_metadata,
+        }])[0]
+
+    def save_many(self, source_id: str, artifacts: list[dict]) -> list[str]:
+        """Write a validated batch and publish its manifest in one final step.
+
+        A network or format failure must be detected before this method is called.
+        If an artifact write fails, the previous manifest remains authoritative.
+        """
+        if not SAFE_ID.fullmatch(source_id):
+            raise ValueError("unsafe source id")
+        prepared: list[tuple[Path, bytes, dict]] = []
         collected = datetime.now(KST).isoformat()
-        name = f"{digest}.{extension}"
-        path = self.raw / source_id / name
-        if not path.exists():
-            atomic_write(path, content)
-        metadata = {"source_id": source_id, "item_id": item_id,
-                    "source_url": source_url, "original_filename": original_filename,
-                    "collected_at": collected, "reference_date": reference_date,
-                    "content_type": content_type, "byte_count": len(content),
-                    "sha256": digest, "fingerprint": fingerprint, "filename": name}
-        atomic_write(path.with_name(f"{digest}.metadata.json"),
-                     (json.dumps(metadata, ensure_ascii=False, indent=2) + "\n").encode())
+        for artifact in artifacts:
+            extension = artifact["extension"]
+            content = artifact["content"]
+            if not SAFE_ID.fullmatch(extension):
+                raise ValueError("unsafe extension")
+            if not content:
+                raise ValueError("empty response")
+            digest = hashlib.sha256(content).hexdigest()
+            name = f"{digest}.{extension}"
+            metadata = {
+                "source_id": source_id, "item_id": artifact["item_id"],
+                "source_url": artifact["source_url"],
+                "original_filename": artifact.get("original_filename"),
+                "collected_at": collected,
+                "reference_date": artifact.get("reference_date"),
+                "content_type": artifact.get("content_type"),
+                "http_status": artifact.get("http_status"),
+                "byte_count": len(content), "sha256": digest,
+                "fingerprint": artifact.get("fingerprint"), "filename": name,
+            }
+            if artifact.get("response_metadata") is not None:
+                metadata["response"] = artifact["response_metadata"]
+            prepared.append((self.raw / source_id / name, content, metadata))
+
+        # Raw bytes and sidecar metadata are immutable artifacts. The manifest is
+        # updated only after every artifact in the batch is safely present.
+        for path, content, metadata in prepared:
+            if not path.exists():
+                atomic_write(path, content)
+            atomic_write(path.with_name(f"{metadata['sha256']}.metadata.json"),
+                         (json.dumps(metadata, ensure_ascii=False, indent=2) + "\n").encode())
         state = self.manifest(source_id)
-        state["items"][item_id] = metadata
-        state["last_checked_at"] = collected
-        state["last_error"] = None
+        for _, _, metadata in prepared:
+            state["items"][metadata["item_id"]] = metadata
         self.save_manifest(source_id, state)
-        return name
+        return [metadata["filename"] for _, _, metadata in prepared]

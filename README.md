@@ -12,6 +12,11 @@
 
 추가 후보 `suji_programs`는 `--source suji_programs`로 실행할 수 있습니다. 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공하므로 HTML 원본으로 저장하며 CSV라고 표시하지 않습니다. 기존 분석 프로젝트의 데이터셋 목록과 수집기의 MVP 기본 목록은 아직 다릅니다. 최종 3종을 확정할 때 두 저장소의 목록을 맞춰야 합니다.
 
+현재 차이와 상세 파일 식별자, 요청변수, 갱신일 및 저장 규격은
+[`docs/DATA_SOURCES.md`](docs/DATA_SOURCES.md)에 기록합니다. 분석 저장소의
+선정 목록은 `suji_programs`, `public_facilities`, `city_parks`이고 이 저장소와
+공통인 항목은 `public_facilities` 하나입니다.
+
 ## 실행
 
 PowerShell:
@@ -40,10 +45,21 @@ python -m yongin_collector daily --source public_facilities
 
 ## 저장 규격
 
-`data/raw/<source_id>/`에 원본 바이트를 SHA-256 파일명으로 보존하고 옆에 `*.metadata.json`을 둡니다. `data/state/<source_id>.json`은 마지막 확인과 파일별 해시·실패 원인을 기록합니다. 수집일(`collected_at`)과 데이터 기준일(`reference_date`)은 별도 필드입니다. 파일명에서 기준일을 추론할 수 없으면 `null`입니다. 파일과 이력은 Git에서 제외됩니다.
+`data/raw/<source_id>/`에 원본 바이트를 SHA-256 파일명으로 보존하고 옆에 `*.metadata.json`을 둡니다. `data/state/<source_id>.json`은 마지막 확인, 현재 정상 파일별 해시, 성공·실패 실행 이력을 기록합니다. 수집일(`collected_at`)과 데이터 기준일(`reference_date`)은 별도 필드입니다. 파일명에서 기준일을 추론할 수 없으면 `null`입니다. API 메타데이터에는 HTTP 상태, 페이지·전체 건수, 필드 구조와 기준일 목록도 기록합니다. 파일과 이력은 Git에서 제외됩니다.
 
-정제와 Supabase 적재는 분석 서비스의 책임입니다. 두 프로젝트는 원본 폴더와 메타데이터 규격을 통해 연결합니다. 실제 운영에서는 두 환경이 접근할 수 있는 저장소를 별도로 정해야 합니다.
+정제와 Supabase 적재는 분석 서비스의 책임입니다. 두 프로젝트는 원본 폴더와 메타데이터 규격을 통해 연결합니다. 실제 운영에서는 두 환경이 접근할 수 있는 저장소를 별도로 정해야 합니다. 지속 볼륨, 분석 서비스의 읽기 전용 마운트 경로·권한과 보존 정책이 먼저 합의되어야 하며 자세한 전달 계약은 `docs/DATA_SOURCES.md`를 따릅니다.
 
 ## n8n
 
 `workflows/n8n/daily-collector.json`은 self-hosted Linux n8n용 가져오기 템플릿입니다. `/opt/yongin-public-data-collector` 경로에 이 저장소와 Python 가상환경이 존재하도록 배치한 다음, n8n에서 워크플로를 가져와 실행 경로와 일정을 확인하세요. n8n Cloud에서는 Execute Command 노드가 제공되지 않을 수 있으므로 별도 실행 서버가 필요합니다. 실제 n8n 계정 연결·스케줄 실행은 아직 검증하지 않았습니다.
+
+self-hosted n8n에서는 저장소와 가상환경을 준비한 뒤 UI의 **Import from
+File**로 템플릿을 가져오거나 지원되는 버전에서 아래처럼 가져옵니다.
+
+```bash
+n8n import:workflow --input=workflows/n8n/daily-collector.json
+```
+
+가져온 후 비활성 상태에서 Execute Command 노드를 수동 실행해 종료 코드와
+실패 출력을 확인하고, 성공한 뒤에만 워크플로를 활성화합니다. 인증키는 n8n
+JSON에 넣지 않고 실행 계정이 읽을 수 있는 저장소의 로컬 `.env`로만 제공합니다.
