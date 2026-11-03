@@ -6,7 +6,7 @@ import httpx
 from yongin_collector.collect import (
     _api_items, collect_api, discover_files, validate_download,
 )
-from yongin_collector.sources import Source
+from yongin_collector.sources import DEFAULT_SOURCE_IDS, Source
 from yongin_collector.store import Store
 
 
@@ -42,6 +42,13 @@ def test_rejects_html_disguised_as_csv():
         assert "HTML" in str(exc)
     else:
         raise AssertionError("HTML error page must not be stored as CSV")
+
+
+def test_mvp_allowlist_has_csv_file_and_api():
+    assert DEFAULT_SOURCE_IDS == (
+        "giheung_events", "library_new_books", "public_facilities"
+    )
+    validate_download("제목,장소\n행사,용인\n".encode("cp949"), "csv")
 
 
 def test_api_rejects_other_city_before_storing(tmp_path):

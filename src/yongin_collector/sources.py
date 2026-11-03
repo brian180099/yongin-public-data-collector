@@ -26,9 +26,15 @@ SOURCES = {
         "library_new_books", "portal_file",
         "https://www.data.go.kr/data/3038399/fileData.do", "3038399"
     ),
+    "giheung_events": Source(
+        "giheung_events", "portal_file",
+        "https://www.data.go.kr/data/15136583/fileData.do", "15136583"
+    ),
     "public_facilities": Source(
         "public_facilities", "api",
         "https://api.data.go.kr/openapi/tn_pubr_public_pblfclt_opn_info_api",
         "15013117"
     ),
 }
+
+DEFAULT_SOURCE_IDS = ("giheung_events", "library_new_books", "public_facilities")

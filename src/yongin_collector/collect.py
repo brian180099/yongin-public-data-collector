@@ -1,6 +1,8 @@
 """Source discovery, official file download, and bounded API collection."""
 
 import hashlib
+import csv
+import io
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -55,6 +57,14 @@ def validate_download(content: bytes, extension: str) -> None:
         head = content[:512].lstrip().lower()
         if head.startswith((b"<!doctype", b"<html", b"<script")):
             raise ValueError("HTML returned instead of CSV")
+        try:
+            decoded = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            decoded = content.decode("cp949")
+        rows = csv.reader(io.StringIO(decoded))
+        header = next(rows, [])
+        if len(header) < 2 or not any(True for _ in rows):
+            raise ValueError("CSV header or data rows missing")
     if extension == "html" and b"<html" not in content[:4096].lower():
         raise ValueError("HTML signature mismatch")
 

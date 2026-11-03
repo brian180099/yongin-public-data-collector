@@ -8,7 +8,7 @@ import os
 from dotenv import load_dotenv
 
 from .collect import collect
-from .sources import SOURCES
+from .sources import DEFAULT_SOURCE_IDS, SOURCES
 from .store import ROOT, Store
 
 
@@ -23,7 +23,8 @@ def main() -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)
     store = Store()
-    selected = [SOURCES[args.source]] if args.source else list(SOURCES.values())
+    selected = ([SOURCES[args.source]] if args.source else
+                [SOURCES[source_id] for source_id in DEFAULT_SOURCE_IDS])
     if args.mode == "status":
         for source in selected:
             state = store.manifest(source.source_id)

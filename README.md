@@ -2,15 +2,15 @@
 
 기존 [`yongin-public-data-ai`](https://github.com/brian180099/yongin-public-data-ai)의 독립 수집 프로젝트입니다. 용인시 생활여가·문화·체육 MVP 대상만 수집합니다. [공공데이터포털 용인시 검색 결과](https://www.data.go.kr/tcs/dss/selectDataSetList.do?keyword=%EC%9A%A9%EC%9D%B8%EC%8B%9C&conditionType=search&org=&orgFilter=&orgFullName=)의 전체 351건은 수집 대상이 아닙니다.
 
-현재 허용 목록은 세 소스입니다.
+기본 MVP 대상은 세 소스입니다.
 
 | ID | 출처 | 방식 | 상태 |
 |---|---|---|---|
-| `suji_programs` | [수지구청 생활체육 프로그램](https://www.data.go.kr/data/15136680/fileData.do) | 공식 제공 페이지 HTML 원본 | 실행 검증 |
+| `giheung_events` | [기흥구 이벤트 정보](https://www.data.go.kr/data/15136583/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
 | `library_new_books` | [용인시 도서관 신간도서](https://www.data.go.kr/data/3038399/fileData.do) | 포털의 공식 XLSX 다운로드 요청 | 실행 검증 |
 | `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 키 없어 실호출 미검증 |
 
-수지구청 데이터는 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공합니다. 이 수집기는 실제 제공된 HTML을 원본으로 저장하며 CSV라고 표시하지 않습니다. 도시공원 데이터는 기존 분석 프로젝트의 선정 목록에 있으나, 첨부 화면에 보인 도서관 파일을 XLSX 검증 대상으로 우선 선택했습니다. 최종 3종은 분석 프로젝트와 맞춰 확정해야 합니다.
+추가 후보 `suji_programs`는 `--source suji_programs`로 실행할 수 있습니다. 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공하므로 HTML 원본으로 저장하며 CSV라고 표시하지 않습니다. 기존 분석 프로젝트의 데이터셋 목록과 수집기의 MVP 기본 목록은 아직 다릅니다. 최종 3종을 확정할 때 두 저장소의 목록을 맞춰야 합니다.
 
 ## 실행
 
