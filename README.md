@@ -2,13 +2,16 @@
 
 기존 [`yongin-public-data-ai`](https://github.com/brian180099/yongin-public-data-ai)의 독립 수집 프로젝트입니다. 용인시 생활여가·문화·체육 MVP 대상만 수집합니다. [공공데이터포털 용인시 검색 결과](https://www.data.go.kr/tcs/dss/selectDataSetList.do?keyword=%EC%9A%A9%EC%9D%B8%EC%8B%9C&conditionType=search&org=&orgFilter=&orgFullName=)의 전체 351건은 수집 대상이 아닙니다.
 
-기본 MVP 대상은 세 소스입니다.
+기본 실행 대상은 명시적으로 허용한 다섯 소스입니다. 검색 결과 전체를
+수집하지 않으며, 자동차 등록현황은 사용자가 승인한 교통 데이터 확장입니다.
 
 | ID | 출처 | 방식 | 상태 |
 |---|---|---|---|
 | `giheung_events` | [기흥구 이벤트 정보](https://www.data.go.kr/data/15136583/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
 | `library_new_books` | [용인시 도서관 신간도서](https://www.data.go.kr/data/3038399/fileData.do) | 포털의 공식 XLSX 다운로드 요청 | 실행 검증 |
 | `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 키 없어 실호출 미검증 |
+| `vehicle_registrations` | [자동차 등록현황](https://www.data.go.kr/data/3035912/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
+| `vehicle_registrations_api` | [자동차 등록현황 Open API](https://www.data.go.kr/data/3035912/fileData.do) | 활용신청 후 ODCLOUD JSON | 승인 키 필요 |
 
 추가 후보 `suji_programs`는 `--source suji_programs`로 실행할 수 있습니다. 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공하므로 HTML 원본으로 저장하며 CSV라고 표시하지 않습니다. 기존 분석 프로젝트의 데이터셋 목록과 수집기의 MVP 기본 목록은 아직 다릅니다. 최종 3종을 확정할 때 두 저장소의 목록을 맞춰야 합니다.
 
@@ -39,7 +42,17 @@ pytest
 ```powershell
 python -m yongin_collector backfill --source library_new_books
 python -m yongin_collector daily --source public_facilities
+python -m yongin_collector backfill --source vehicle_registrations
+python -m yongin_collector apply --source vehicle_registrations_api --open
+python -m yongin_collector daily --source vehicle_registrations_api
 ```
+
+`apply`는 공공데이터포털 상세 페이지를 열며, **오픈 API → 활용신청**을
+선택할 수 있습니다. 로그인, 서비스키 선택과 약관 확인은 사용자가 직접
+완료해야 하며 수집기는 신청 완료를 가장하지
+않습니다. 승인 후 Decoding 인증키를 로컬 `.env`의
+`DATA_GO_KR_SERVICE_KEY`에 설정하면 API 원본을 수집합니다. API 주소는 현재
+파일 UDDI와 공식 Swagger 문서를 매 실행마다 대조해 갱신합니다.
 
 `backfill`은 등록된 원본 파일을 확인하고 처음 한 번 저장합니다. `daily`는 파일을 다시 받아 해시를 비교하고, 새 파일 또는 내용이 달라진 파일만 저장합니다. 포털이 변경 시각이나 ETag를 안정적으로 제공하지 않아 다운로드 트래픽은 매일 발생합니다. 파일 개수 상한은 현재 데이터셋당 20개입니다.
 

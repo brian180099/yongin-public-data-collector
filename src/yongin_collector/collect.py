@@ -190,6 +190,36 @@ def _api_items(payload: dict) -> tuple[list[dict], int]:
     return items, int(body.get("totalCount", len(items)))
 
 
+def resolve_odcloud_api_url(source: Source, client: httpx.Client) -> str:
+    """Resolve the current file UDDI against the portal's official OAS document."""
+
+    if not source.portal_id:
+        return source.url
+    detail_url = f"{PORTAL}/data/{source.portal_id}/fileData.do"
+    detail = client.get(detail_url)
+    detail.raise_for_status()
+    candidates = discover_files(detail.text, source.portal_id, source.max_files)
+    if len(candidates) != 1:
+        raise ValueError("expected exactly one current file for ODCLOUD API resolution")
+    current_detail_id = candidates[0].detail_id
+    oas_response = client.get(
+        "https://infuser.odcloud.kr/oas/docs",
+        params={"namespace": f"{source.portal_id}/v1"},
+    )
+    oas_response.raise_for_status()
+    try:
+        oas = oas_response.json()
+    except ValueError as exc:
+        raise ValueError("ODCLOUD OAS document is not JSON") from exc
+    path = f"/{source.portal_id}/v1/{current_detail_id}"
+    if (oas.get("host") != "api.odcloud.kr" or
+            oas.get("basePath") != "/api" or
+            "https" not in oas.get("schemes", []) or
+            path not in oas.get("paths", {})):
+        raise ValueError("current file is missing from the official ODCLOUD OAS")
+    return f"https://api.odcloud.kr/api{path}"
+
+
 def collect_api(source: Source, store: Store, client: httpx.Client,
                 service_key: str, max_pages: int = 10) -> dict:
     if not service_key:
@@ -274,6 +304,101 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
             "total_count": expected_total, "field_count": len(field_names)}
 
 
+def collect_odcloud_api(source: Source, store: Store, client: httpx.Client,
+                        service_key: str, max_pages: int = 10) -> dict:
+    """Collect a data.go.kr auto-converted JSON API without key-bearing URLs."""
+
+    if not service_key:
+        raise ValueError("DATA_GO_KR_SERVICE_KEY is missing")
+    api_url = resolve_odcloud_api_url(source, client)
+    required = set(source.required_fields)
+    expected_total: int | None = None
+    found = saved = unchanged = pages = 0
+    field_names: set[str] = set()
+    pending: list[dict] = []
+    for page_no in range(1, max_pages + 1):
+        response = client.get(
+            api_url,
+            params={"page": page_no, "perPage": 1000, "returnType": "JSON"},
+            # ODCLOUD accepts the decoding key in this header. Keeping it out of
+            # the URL prevents proxies and HTTP exception strings from logging it.
+            headers={"Authorization": f"Infuser {service_key}"},
+        )
+        response.raise_for_status()
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise ValueError("ODCLOUD returned a non-JSON response") from exc
+        if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
+            raise ValueError("unexpected ODCLOUD response schema")
+        items = payload["data"]
+        if any(not isinstance(item, dict) for item in items):
+            raise ValueError("unexpected ODCLOUD data item schema")
+        try:
+            total = int(payload["totalCount"])
+            current = int(payload["currentCount"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ValueError("ODCLOUD response counts are missing or invalid") from exc
+        if current != len(items):
+            raise ValueError("ODCLOUD currentCount does not match data length")
+        if expected_total is None:
+            expected_total = total
+            required_pages = max(1, (total + 999) // 1000)
+            if required_pages > max_pages:
+                raise ValueError(
+                    f"ODCLOUD result requires {required_pages} pages; "
+                    f"configured cap is {max_pages}"
+                )
+        elif total != expected_total:
+            raise ValueError("ODCLOUD totalCount changed during collection")
+        if page_no == 1 and not items:
+            raise ValueError("ODCLOUD returned no records")
+        if any(not required.issubset(item) for item in items):
+            raise ValueError("ODCLOUD response is missing required vehicle fields")
+
+        page_fields = set().union(*(item.keys() for item in items)) if items else set()
+        field_names.update(page_fields)
+        found += len(items)
+        pages += 1
+        digest = hashlib.sha256(response.content).hexdigest()
+        item_id = f"page_{page_no}"
+        if store.known(source.source_id, item_id, digest):
+            unchanged += 1
+        else:
+            reference_dates = sorted({
+                str(item["데이터기준일자"]) for item in items
+                if item.get("데이터기준일자") not in (None, "")
+            })
+            pending.append({
+                "item_id": item_id, "content": response.content,
+                "extension": "json", "source_url": api_url,
+                "reference_date": reference_dates[-1] if reference_dates else None,
+                "fingerprint": digest,
+                "content_type": response.headers.get("content-type"),
+                "http_status": response.status_code,
+                "response_metadata": {
+                    "page_no": page_no, "record_count": len(items),
+                    "total_count": total, "field_names": sorted(page_fields),
+                    "reference_dates": reference_dates,
+                },
+            })
+            saved += 1
+        if found >= total:
+            break
+    else:
+        raise ValueError(f"ODCLOUD result exceeds {max_pages} pages")
+    if expected_total is None or found != expected_total:
+        raise ValueError(
+            f"ODCLOUD pagination count mismatch: expected {expected_total}, "
+            f"received {found}"
+        )
+    if pending:
+        store.save_many(source.source_id, pending)
+    return {"source": source.source_id, "found": found, "saved": saved,
+            "unchanged": unchanged, "pages": pages,
+            "total_count": expected_total, "field_count": len(field_names)}
+
+
 def collect(source: Source, store: Store, service_key: str | None,
             mode: str = "daily") -> dict:
     # httpx INFO logs include request URLs, including the service key.
@@ -286,4 +411,6 @@ def collect(source: Source, store: Store, service_key: str | None,
                                        refresh_existing=(mode == "daily"))
         if source.kind == "api":
             return collect_api(source, store, client, service_key or "")
+        if source.kind == "odcloud_api":
+            return collect_odcloud_api(source, store, client, service_key or "")
         raise ValueError("unsupported source kind")

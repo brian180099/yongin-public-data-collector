@@ -1,13 +1,16 @@
 import hashlib
 import json
 from pathlib import Path
+import sys
 
 import httpx
 
 from yongin_collector.collect import (
-    _api_items, collect_api, collect_portal_file, discover_files, validate_download,
+    _api_items, collect_api, collect_odcloud_api, collect_portal_file,
+    discover_files, resolve_odcloud_api_url, validate_download,
 )
-from yongin_collector.sources import DEFAULT_SOURCE_IDS, Source
+from yongin_collector.cli import main
+from yongin_collector.sources import DEFAULT_SOURCE_IDS, SOURCES, Source
 from yongin_collector.store import Store
 
 
@@ -59,8 +62,11 @@ def test_rejects_pk_bytes_disguised_as_xlsx():
 
 def test_mvp_allowlist_has_csv_file_and_api():
     assert DEFAULT_SOURCE_IDS == (
-        "giheung_events", "library_new_books", "public_facilities"
+        "giheung_events", "library_new_books", "public_facilities",
+        "vehicle_registrations", "vehicle_registrations_api",
     )
+    assert SOURCES["vehicle_registrations"].portal_id == "3035912"
+    assert SOURCES["vehicle_registrations_api"].application_url
     validate_download("제목,장소\n행사,용인\n".encode("cp949"), "csv")
 
 
@@ -239,3 +245,101 @@ def test_n8n_daily_template_is_inactive_key_free_and_kst():
                    if node["type"] == "n8n-nodes-base.executeCommand")
     assert "python -m yongin_collector daily" in command["parameters"]["command"]
     assert "DATA_GO_KR_SERVICE_KEY" not in serialized
+
+
+def _vehicle_item(reference_date="2025-12-31"):
+    return {
+        "시군구": "용인시", "읍면동": "처인구", "용도별 관용": "1",
+        "용도별 자가용": "2", "용도별 영업용": "3", "차종별 승용": "4",
+        "차종별 승합": "5", "차종별 화물": "6", "차종별 특수": "7",
+        "데이터기준일자": reference_date,
+    }
+
+
+def _vehicle_api_source():
+    configured = SOURCES["vehicle_registrations_api"]
+    return Source(
+        configured.source_id, configured.kind, "https://example.org/api",
+        required_fields=configured.required_fields,
+    )
+
+
+def test_odcloud_api_uses_header_and_preserves_validated_response(tmp_path):
+    source = _vehicle_api_source()
+    payload = {"page": 1, "perPage": 1000, "totalCount": 2,
+               "currentCount": 2, "matchCount": 2,
+               "data": [_vehicle_item(), _vehicle_item("2025-11-30")]}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "serviceKey" not in request.url.params
+        assert request.headers["Authorization"] == "Infuser secret-key"
+        return httpx.Response(200, json=payload)
+
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = collect_odcloud_api(source, store, client, "secret-key")
+    assert result == {
+        "source": "vehicle_registrations_api", "found": 2, "saved": 1,
+        "unchanged": 0, "pages": 1, "total_count": 2, "field_count": 10,
+    }
+    metadata = store.manifest(source.source_id)["items"]["page_1"]
+    assert metadata["reference_date"] == "2025-12-31"
+    assert metadata["response"]["total_count"] == 2
+    assert "secret-key" not in json.dumps(metadata, ensure_ascii=False)
+
+
+def test_odcloud_api_rejects_invalid_second_page_without_commit(tmp_path):
+    source = _vehicle_api_source()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        page = int(request.url.params["page"])
+        data = [_vehicle_item()] * 1000 if page == 1 else [{"시군구": "용인시"}]
+        return httpx.Response(200, json={
+            "page": page, "perPage": 1000, "totalCount": 1001,
+            "currentCount": len(data), "matchCount": 1001, "data": data,
+        })
+
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        try:
+            collect_odcloud_api(source, store, client, "secret-key")
+        except ValueError as exc:
+            assert "required vehicle fields" in str(exc)
+        else:
+            raise AssertionError("invalid second page must fail the whole collection")
+    assert store.manifest(source.source_id)["items"] == {}
+
+
+def test_apply_mode_reports_manual_portal_action(monkeypatch, capsys):
+    monkeypatch.setattr(sys, "argv", [
+        "yongin-collect", "apply", "--source", "vehicle_registrations_api"
+    ])
+    assert main() == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["status"] == "manual_action_required"
+    assert result["requires_login"] is True
+    assert result["application_url"].endswith("/data/3035912/fileData.do")
+
+
+def test_odcloud_url_resolves_current_portal_file_against_oas():
+    source = SOURCES["vehicle_registrations_api"]
+    detail_id = "uddi:current"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.host == "www.data.go.kr":
+            html = (
+                "fileDetailObj.fn_fileDataDown('3035912', "
+                f"'{detail_id}', '','1', '1')"
+            )
+            return httpx.Response(200, text=html)
+        assert request.url.host == "infuser.odcloud.kr"
+        assert request.url.params["namespace"] == "3035912/v1"
+        return httpx.Response(200, json={
+            "host": "api.odcloud.kr", "basePath": "/api",
+            "schemes": ["https"],
+            "paths": {f"/3035912/v1/{detail_id}": {"get": {}}},
+        })
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        resolved = resolve_odcloud_api_url(source, client)
+    assert resolved == f"https://api.odcloud.kr/api/3035912/v1/{detail_id}"

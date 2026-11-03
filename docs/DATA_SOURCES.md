@@ -2,8 +2,9 @@
 
 기준일: 2026-11-03
 
-공공데이터포털의 용인시 검색 결과 전체가 아니라 아래 MVP 허용 목록만
-처리한다. `suji_programs`는 추가 후보이며 기본 실행에서 제외한다.
+공공데이터포털의 용인시 검색 결과 전체가 아니라 아래 명시적 허용 목록만
+처리한다. 자동차 등록현황은 사용자가 승인한 교통 데이터 확장이고,
+`suji_programs`는 추가 후보이며 기본 실행에서 제외한다.
 
 ## 현재 출처
 
@@ -62,6 +63,26 @@ sidecar 메타데이터에 기록한다. `DATA_GO_KR_SERVICE_KEY`가 없거나 �
 - 공식 페이지: <https://www.sujigu.go.kr/lmth/04life0703.asp>
 - 현재 상태: 포털 상세 페이지에 다운로드 후보가 없고 공식 페이지 바로가지만
   있다. 따라서 공식 HTML만 원본으로 저장하고 CSV 수집 완료로 표시하지 않는다.
+
+### `vehicle_registrations` / `vehicle_registrations_api`
+
+- 상세 페이지: <https://www.data.go.kr/data/3035912/fileData.do>
+- 포털 ID: `3035912`
+- 현재 파일 상세 ID: `uddi:2310ae65-f196-4e39-8235-906b9bb69cb7`
+- 현재 원본명: `경기도 용인시_자동차 등록현황_20251231.csv`
+- 현재 원본: 2,999바이트, UTF-8 CSV, 42행, 10컬럼
+- 데이터 기준일: 2025-12-31
+- 등록일/수정일: 2026-04-02 / 2026-09-22
+- 갱신주기: 연간
+- API OAS: <https://infuser.odcloud.kr/oas/docs?namespace=3035912/v1>
+
+CSV는 다른 포털 파일과 같은 공식 다운로드 절차와 SHA-256 변경 판정을
+사용한다. API는 `python -m yongin_collector apply --source
+vehicle_registrations_api --open`으로 상세 페이지를 연 뒤 **오픈 API →
+활용신청**을 선택한다. 로그인과 신청 확정은 사용자가 수행한다. 승인 후
+수집기는 현재 파일 UDDI를 OAS와 대조하고
+ODCLOUD API를 페이지 단위로 호출한다. 인증키는 URL이 아닌 `Authorization`
+헤더로 전달하며 원본·메타데이터·오류 기록에 남기지 않는다.
 
 ## 기존 분석 저장소와의 차이
 

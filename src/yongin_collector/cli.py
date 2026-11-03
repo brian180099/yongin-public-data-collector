@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import webbrowser
 
 from dotenv import load_dotenv
 
@@ -14,8 +15,10 @@ from .store import ROOT, Store
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("mode", choices=("backfill", "daily", "status"))
+    parser.add_argument("mode", choices=("backfill", "daily", "status", "apply"))
     parser.add_argument("--source", choices=tuple(SOURCES))
+    parser.add_argument("--open", action="store_true",
+                        help="open the official API application page (apply mode)")
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
@@ -25,6 +28,25 @@ def main() -> int:
     store = Store()
     selected = ([SOURCES[args.source]] if args.source else
                 [SOURCES[source_id] for source_id in DEFAULT_SOURCE_IDS])
+    if args.mode == "apply":
+        applicable = [source for source in selected if source.application_url]
+        if not applicable:
+            parser.error("apply mode requires a source with an application URL")
+        for source in applicable:
+            if args.open:
+                webbrowser.open(source.application_url or "")
+            print(json.dumps({
+                "source": source.source_id,
+                "status": "manual_action_required",
+                "requires_login": True,
+                "application_url": source.application_url,
+                "next_step": (
+                    "sign in, select the Open API tab and click utilization "
+                    "application; after approval set DATA_GO_KR_SERVICE_KEY in "
+                    "the local .env and run daily for this source"
+                ),
+            }, ensure_ascii=False))
+        return 0
     if args.mode == "status":
         for source in selected:
             state = store.manifest(source.source_id)
