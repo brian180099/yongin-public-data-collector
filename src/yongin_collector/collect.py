@@ -176,9 +176,14 @@ def collect_portal_file(source: Source, store: Store, client: httpx.Client,
 
 
 def _api_items(payload: dict) -> tuple[list[dict], int]:
-    body = payload.get("response", {}).get("body", {})
-    header = payload.get("response", {}).get("header", {})
-    if str(header.get("resultCode", "00")) not in {"00", "0"}:
+    envelope = payload.get("response", payload)
+    if not isinstance(envelope, dict):
+        raise ValueError("unexpected API response schema")
+    body = envelope.get("body")
+    header = envelope.get("header")
+    if not isinstance(body, dict) or not isinstance(header, dict):
+        raise ValueError("unexpected API response schema")
+    if str(header.get("resultCode")) not in {"00", "0"}:
         raise ValueError("API result code indicates failure")
     items = body.get("items", [])
     if isinstance(items, dict):
@@ -224,16 +229,16 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
                 service_key: str, max_pages: int = 10) -> dict:
     if not service_key:
         raise ValueError("DATA_GO_KR_SERVICE_KEY is missing")
-    saved = unchanged = found = 0
+    saved = unchanged = found = fetched = 0
     expected_total: int | None = None
     pending: list[dict] = []
     field_names: set[str] = set()
     pages = 0
     for page_no in range(1, max_pages + 1):
-        # The source API documents rdnmadr as a filter. Reject non-Yongin
-        # records as well, in case server-side filter semantics change.
+        # The portal's address parameter does not perform a city substring
+        # search. Fetch the bounded full snapshot and filter addresses locally.
         params = {"serviceKey": service_key, "pageNo": page_no,
-                  "numOfRows": 1000, "type": "json", "rdnmadr": "경기도 용인시"}
+                  "numOfRows": 1000, "type": "json"}
         response = client.get(source.url, params=params)
         response.raise_for_status()
         payload = response.json()
@@ -250,18 +255,16 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
         elif total != expected_total:
             raise ValueError("API totalCount changed during paginated collection")
         if not items:
-            if page_no == 1:
-                raise ValueError("no Yongin records returned by API")
-            break
+            raise ValueError("API returned an empty page before its reported total")
         if any(not API_REQUIRED_FIELDS.issubset(item) for item in items):
             raise ValueError("API response is missing required facility fields")
-        if any("용인시" not in (
+        matched = [item for item in items if "용인시" in (
             str(item.get("rdnmadr", "")) + str(item.get("lnmadr", ""))
-        ) for item in items):
-            raise ValueError("API returned records outside Yongin or missing addresses")
+        )]
         page_fields = set().union(*(item.keys() for item in items))
         field_names.update(page_fields)
-        found += len(items)
+        found += len(matched)
+        fetched += len(items)
         pages += 1
         # Preserve the original JSON response; never add the key to metadata.
         digest = hashlib.sha256(response.content).hexdigest()
@@ -270,7 +273,7 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
             unchanged += 1
         else:
             reference_dates = sorted({
-                str(item["referenceDate"]) for item in items
+                str(item["referenceDate"]) for item in matched
                 if item.get("referenceDate") not in (None, "")
             })
             pending.append({
@@ -282,10 +285,11 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
                 "http_status": response.status_code,
                 "response_metadata": {
                     "page_no": page_no, "record_count": len(items),
-                    "total_count": total,
+                    "yongin_record_count": len(matched),
+                    "source_total_count": total,
                     "field_names": sorted(page_fields),
                     "reference_dates": reference_dates,
-                    "address_filter": "용인시",
+                    "address_filter": "용인시 (local match in rdnmadr or lnmadr)",
                 },
             })
             saved += 1
@@ -293,15 +297,18 @@ def collect_api(source: Source, store: Store, client: httpx.Client,
             break
     else:
         raise ValueError(f"API result exceeds {max_pages} pages; increase cap explicitly")
-    if expected_total is not None and found != expected_total:
+    if expected_total is not None and fetched != expected_total:
         raise ValueError(
-            f"API pagination count mismatch: expected {expected_total}, received {found}"
+            f"API pagination count mismatch: expected {expected_total}, received {fetched}"
         )
+    if not found:
+        raise ValueError("no Yongin records returned by complete API snapshot")
     if pending:
         store.save_many(source.source_id, pending)
     return {"source": source.source_id, "found": found, "saved": saved,
             "unchanged": unchanged, "pages": pages,
-            "total_count": expected_total, "field_count": len(field_names)}
+            "total_count": found, "source_total_count": expected_total,
+            "field_count": len(field_names)}
 
 
 def collect_odcloud_api(source: Source, store: Store, client: httpx.Client,

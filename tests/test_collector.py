@@ -84,15 +84,16 @@ def test_api_rejects_other_city_before_storing(tmp_path):
         try:
             collect_api(source, store, client, "test-key")
         except ValueError as exc:
-            assert "outside Yongin" in str(exc)
+            assert "no Yongin records" in str(exc)
         else:
             raise AssertionError("non-Yongin record should be rejected")
     assert not (tmp_path / "raw" / "public_facilities").exists()
 
 
 def test_api_item_shape():
-    rows, count = _api_items({"response": {"body": {"items": {"item": {
-        "rdnmadr": "경기도 용인시 수지구"}}, "totalCount": "1"}}})
+    rows, count = _api_items({"response": {"header": {"resultCode": "00"},
+        "body": {"items": {"item": {"rdnmadr": "경기도 용인시 수지구"}},
+                 "totalCount": "1"}}})
     assert count == 1
     assert len(rows) == 1
 
@@ -197,13 +198,41 @@ def test_api_stores_response_shape_counts_and_reference_dates(tmp_path):
         result = collect_api(source, store, client, "secret")
     assert result == {"source": "public_facilities", "found": 2, "saved": 1,
                       "unchanged": 0, "pages": 1, "total_count": 2,
+                      "source_total_count": 2,
                       "field_count": 4}
     metadata = store.manifest("public_facilities")["items"]["page_1"]
     assert metadata["reference_date"] == "2026-10-02"
     assert metadata["http_status"] == 200
     assert metadata["response"]["record_count"] == 2
+    assert metadata["response"]["yongin_record_count"] == 2
     assert metadata["response"]["reference_dates"] == ["2026-10-01", "2026-10-02"]
     assert "secret" not in json.dumps(metadata, ensure_ascii=False)
+
+
+def test_api_accepts_actual_top_level_shape_and_filters_locally(tmp_path):
+    source = Source("public_facilities", "api", "https://example.org/api")
+    items = [
+        {"rdnmadr": "서울특별시 중구", "lnmadr": "", "referenceDate": "2026-10-01"},
+        {"rdnmadr": "경기도 용인시 수지구", "lnmadr": "", "referenceDate": "2026-10-02"},
+    ]
+    payload = {"header": {"resultCode": "00"},
+               "body": {"items": {"item": items}, "totalCount": 2}}
+    original_bytes = json.dumps(payload, ensure_ascii=False).encode()
+
+    def handler(request):
+        assert "rdnmadr" not in request.url.params
+        return httpx.Response(200, content=original_bytes)
+
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = collect_api(source, store, client, "synthetic-key")
+    assert result["found"] == result["total_count"] == 1
+    assert result["source_total_count"] == 2
+    metadata = store.manifest(source.source_id)["items"]["page_1"]
+    assert metadata["response"]["yongin_record_count"] == 1
+    assert metadata["response"]["record_count"] == 2
+    raw = (tmp_path / "raw" / source.source_id / metadata["filename"]).read_bytes()
+    assert raw == original_bytes
 
 
 def test_failed_api_pagination_does_not_commit_first_page(tmp_path):

@@ -22,7 +22,8 @@ docker compose -f compose.collector.yaml up -d --build
 <http://localhost:5678/workflow/YNGN01CollectWk1>. 두 워크플로는 별도입니다.
 수집과 분석은 `.runtime/`의 별도 PostgreSQL 로그인으로 실행합니다. 이 폴더는
 Git과 Docker 이미지·볼륨에서 제외됩니다. 서버 이전 시 `.runtime/`도 별도로
-안전하게 백업해야 합니다. 공공시설 API는 인증키와 활용신청이 없어 미실행입니다.
+안전하게 백업해야 합니다. 공공시설 API 원본 수집은 실호출을 검증했지만
+운영 DB 파서와 n8n 자동 대상 등록은 아직 완료되지 않았습니다.
 
 API 활용신청이 승인되면 인증키를 로컬 CLI와 Docker 수집 서비스가 함께 읽는
 `.runtime/collector.env`의 `DATA_GO_KR_SERVICE_KEY`에 입력하고 수집 컨테이너를
@@ -72,7 +73,7 @@ python scripts/sync_portal_application.py --source public_facilities
 |---|---|---|---|
 | `giheung_events` | [기흥구 이벤트 정보](https://www.data.go.kr/data/15136583/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
 | `library_new_books` | [용인시 도서관 신간도서](https://www.data.go.kr/data/3038399/fileData.do) | 포털의 공식 XLSX 다운로드 요청 | 실행 검증 |
-| `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 키 없어 실호출 미검증 |
+| `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 원본 8페이지 수집·재실행 검증, 용인시 97건; 운영 DB 미적재 |
 | `vehicle_registrations` | [자동차 등록현황](https://www.data.go.kr/data/3035912/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
 | `vehicle_registrations_api` | [자동차 등록현황 Open API](https://www.data.go.kr/data/3035912/fileData.do) | 활용신청 후 ODCLOUD JSON | 승인 키 필요 |
 
