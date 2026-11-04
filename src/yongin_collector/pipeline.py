@@ -41,6 +41,10 @@ class PreparedSnapshot:
     quality: dict[str, Any]
 
 
+VEHICLE_PURPOSE_COLUMNS = ("용도별 관용", "용도별 자가용", "용도별 영업용")
+VEHICLE_TYPE_COLUMNS = ("차종별 승용", "차종별 승합", "차종별 화물", "차종별 특수")
+
+
 def _db_url() -> str:
     value = (os.getenv("SUPABASE_DB_URL") or "").strip()
     if not value:
@@ -131,6 +135,21 @@ def prepare_csv_snapshot(content: bytes, *, unique_key_columns: list[str],
             "headers": headers,
         },
     )
+
+
+def validate_vehicle_snapshot(snapshot: PreparedSnapshot) -> PreparedSnapshot:
+    """Reject malformed counts or inconsistent row totals before DB publication."""
+    for row in snapshot.records.values():
+        values = [row[column] for column in
+                  (*VEHICLE_PURPOSE_COLUMNS, *VEHICLE_TYPE_COLUMNS)]
+        if any(not isinstance(value, str) or not value.isdecimal()
+               for value in values):
+            raise QualityError("vehicle count is not a nonnegative integer")
+        if sum(int(row[column]) for column in VEHICLE_PURPOSE_COLUMNS) != sum(
+                int(row[column]) for column in VEHICLE_TYPE_COLUMNS):
+            raise QualityError("vehicle purpose and type totals disagree")
+    snapshot.quality["vehicle_count_validation"] = "passed"
+    return snapshot
 
 
 def compare_snapshot(snapshot: PreparedSnapshot,
@@ -252,6 +271,8 @@ def run_collection(dataset_id: str, trigger_type: str = "manual") -> dict[str, A
             required_columns=list(dataset["required_columns"]),
             reference_date_column=dataset["reference_date_column"],
         )
+        if dataset_id == "vehicle_registrations":
+            snapshot = validate_vehicle_snapshot(snapshot)
 
         with psycopg.connect(
             _db_url(), connect_timeout=15, row_factory=dict_row

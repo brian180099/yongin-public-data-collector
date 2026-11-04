@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 from yongin_collector.api import app
 from yongin_collector.pipeline import (
     QualityError, compare_snapshot, prepare_csv_snapshot, validate_deletion_rate,
+    validate_vehicle_snapshot,
 )
 
 
@@ -91,6 +92,29 @@ def test_payload_hash_is_stable_for_unicode_json():
     prepared = snapshot("A,문화 행사,2026-01-01,2026-01-02,2026-01-01")
     assert len(prepared.hashes["A"]) == 64
     assert json.dumps(prepared.records["A"], ensure_ascii=False)
+
+
+def test_vehicle_counts_must_be_numeric_and_consistent():
+    headers = (
+        "시군구,읍면동,용도별 관용,용도별 자가용,용도별 영업용,"
+        "차종별 승용,차종별 승합,차종별 화물,차종별 특수,데이터기준일자\n"
+    )
+
+    def prepare(counts: str):
+        return prepare_csv_snapshot(
+            (headers + f"수지구,죽전동,{counts},2026-04-02\n").encode(),
+            unique_key_columns=["시군구", "읍면동"],
+            required_columns=headers.strip().split(","),
+            reference_date_column="데이터기준일자",
+        )
+
+    good = validate_vehicle_snapshot(prepare("1,7,2,6,2,2,0"))
+    assert good.reference_date.isoformat() == "2026-04-02"
+    assert good.quality["vehicle_count_validation"] == "passed"
+    with pytest.raises(QualityError, match="nonnegative integer"):
+        validate_vehicle_snapshot(prepare("1,seven,2,6,2,2,0"))
+    with pytest.raises(QualityError, match="totals disagree"):
+        validate_vehicle_snapshot(prepare("1,7,2,7,2,2,0"))
 
 
 def test_collector_health_endpoint():

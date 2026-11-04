@@ -1,9 +1,9 @@
 # 용인 생활여가 수집·분석 데이터 계약
 
-- 계약 버전: `1.1.1`
+- 계약 버전: `1.2.0`
 - 기준일: 2026-11-04 (Asia/Seoul)
 - 스키마 소유자: `yongin-public-data-collector`
-- 적용 범위: 용인시 생활여가·문화·체육 데이터셋 3~5개
+- 적용 범위: 용인시 생활여가·문화·체육 MVP와 승인된 자동차 등록현황 확장
 
 분석 에이전트는 이 문서와 `migrations/`를 읽어야 하며 `collector` 스키마,
 마이그레이션 또는 데이터셋 등록 정보를 임의로 변경하지 않는다. 변경이 필요하면
@@ -33,7 +33,7 @@ Supabase `postgres` 계정은 마이그레이션·역할 프로비저닝에만 �
 |---|---|---|
 | `dataset_id` | `text` PK | 코드와 n8n이 공유하는 안정 ID |
 | `display_name` | `text` | 공식 데이터셋명 |
-| `domain` | `text` | `생활여가`, `문화`, `체육` 중 하나 |
+| `domain` | `text` | `생활여가`, `문화`, `체육`, `교통` 중 하나. `교통`은 승인된 별도 확장 |
 | `provider` | `text` | 공식 제공기관 |
 | `portal_url` | `text` | 사람이 확인하는 소개·상세 페이지 |
 | `access_method` | `text` | `file`, `api`, `page` |
@@ -106,6 +106,10 @@ Supabase 비공개 Storage 버킷·객체 경로를 기록한다. 원본 바이�
 - `analytics.current_dataset_records`: 모든 활성 현재 레코드와 데이터셋·출처
 - `analytics.giheung_events`: 기흥구 이벤트의 관리번호, 제목, 시작일, 종료일,
   데이터 기준일, 수집 기준 출처
+- `analytics.vehicle_registrations`: 자동차 등록현황의 `record_key`, `district`,
+  `town`, 용도별 `government_count`, `private_count`, `commercial_count`,
+  차종별 `passenger_count`, `van_count`, `truck_count`, `special_count` 정수,
+  `reference_date`, `source_url`, `last_success_at`
 - `analytics.dataset_sources`: 데이터셋명, 제공기관, 원본 상세 URL, 데이터 기준일,
   최근 정상 수집일과 마지막 정상 갱신일. 분석 응답의 출처 표시용.
 
@@ -156,11 +160,17 @@ Supabase 비공개 Storage 버킷·객체 경로를 기록한다. 원본 바이�
 - 공식명: 전국공공시설개방정보표준데이터
 - 용인 범위: 도로명 또는 지번 주소에 `용인시`가 있는 레코드
 - 접근: 공공데이터포털 활용신청·인증키 필요
-- 현재 상태: 인증키가 없어 실제 행 수·고유키·결측 품질은 확인하지 못함
-- 지원 분석: 실호출·품질 검증 후 확정
+- 현재 상태: 원본 API 8페이지 확보, 용인시 주소 97건. 운영 DB 적재와
+  안정 고유키 검증은 아직 완료되지 않음
+- 지원 분석: 운영 DB 품질 검증 후 확정
 
 ### 후속 후보
 
+- `vehicle_registrations`: 승인된 교통 확장 CSV 42행을 현재 레코드로 적재.
+  고유키는 `시군구`+`읍면동`, 기준일은 CSV 내부의 2026-04-02이다.
+  파일명 날짜 2025-12-31과 달라 파일명으로 기준일을 추정하지 않는다.
+  숫자 형식과 행별 용도·차종 합계 일치를 검증한다. 최초 적재 42행은
+  신규 등록 차량 수가 아니다.
 - `library_new_books`: XLSX 원본 확보, 10,312,734바이트. 고유키·결측 검사는
   아직 운영 계약에 포함하지 않음.
 - `suji_programs`: 공식 HTML만 확인. CSV 연동 완료가 아님.
@@ -178,3 +188,5 @@ Supabase 비공개 Storage를 우선 목표로 한다. 현재는 Storage 서버 
 - `1.1.0` (2026-11-04): 분석 응답의 출처 뷰와 정의된 행사 건수 조회 계약 추가.
   실제 질문·SQL·제한은 `docs/ANALYSIS_SERVICE.md` 참조.
 - `1.1.1` (2026-11-04): 런타임 로그인 분리와 비밀정보 파일 경로를 명시.
+- `1.2.0` (2026-11-04): 승인된 교통 CSV 확장을 `collector`에 등록하고
+  `analytics.vehicle_registrations` 읽기 뷰, 키·기준일·품질 규칙을 추가.

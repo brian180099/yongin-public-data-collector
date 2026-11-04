@@ -11,6 +11,12 @@
 구별 비교를 지원하지 않습니다. LLM 연결은 아직 없으며 현재 의도 분류는
 규칙 기반입니다.
 
+허용 목록의 CSV 두 종은 운영 DB에 적재돼 있습니다: 기흥구 이벤트 781행,
+사용자가 승인한 교통 확장인 자동차 등록현황 42행. 자동차 자료는
+`analytics.vehicle_registrations` 읽기 뷰에서도 조회할 수 있습니다.
+도서관 신간도서는 XLSX, 수지구 프로그램은 HTML이므로 CSV 적재 대상이
+아닙니다. 공공시설 API는 원본 수집까지 완료했고 운영 DB 적재는 미완료입니다.
+
 ```powershell
 .\.venv\Scripts\python.exe scripts/apply_migrations.py --apply
 .\.venv\Scripts\python.exe scripts/provision_runtime_roles.py
@@ -74,7 +80,7 @@ python scripts/sync_portal_application.py --source public_facilities
 | `giheung_events` | [기흥구 이벤트 정보](https://www.data.go.kr/data/15136583/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
 | `library_new_books` | [용인시 도서관 신간도서](https://www.data.go.kr/data/3038399/fileData.do) | 포털의 공식 XLSX 다운로드 요청 | 실행 검증 |
 | `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 원본 8페이지 수집·재실행 검증, 용인시 97건; 운영 DB 미적재 |
-| `vehicle_registrations` | [자동차 등록현황](https://www.data.go.kr/data/3035912/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
+| `vehicle_registrations` | [자동차 등록현황](https://www.data.go.kr/data/3035912/fileData.do) | 포털 공식 CSV 다운로드 | DB 42행 적재·재실행 검증 |
 | `vehicle_registrations_api` | [자동차 등록현황 Open API](https://www.data.go.kr/data/3035912/fileData.do) | 활용신청 후 ODCLOUD JSON | 승인 키 필요 |
 
 추가 후보 `suji_programs`는 `--source suji_programs`로 실행할 수 있습니다. 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공하므로 HTML 원본으로 저장하며 CSV라고 표시하지 않습니다. 기존 분석 프로젝트의 데이터셋 목록과 수집기의 MVP 기본 목록은 아직 다릅니다. 최종 3종을 확정할 때 두 저장소의 목록을 맞춰야 합니다.
