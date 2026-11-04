@@ -30,6 +30,24 @@ API 활용신청이 승인되면 인증키를 로컬 CLI용 `.env`와 Docker 수
 `public_facilities`는 비활성이고 API 운영 레코드 파서는 실응답으로 검증되지
 않았으므로 키 입력만으로 API 적재 완료가 되는 것은 아닙니다.
 
+승인된 `public_facilities` 활용신청 상세의 키는 로컬 브라우저에서 읽어
+`.runtime/collector.env`에 저장할 수 있습니다. 로그인과 신청 확정은 포털에서
+직접 수행합니다.
+
+```powershell
+python -m pip install -e ".[portal]"
+python -m playwright install chromium
+python scripts/sync_portal_application.py --source public_facilities
+```
+
+브라우저에서 로그인한 뒤 **공공시설개방정보의 승인된 활용신청 상세**를 열고
+터미널에서 Enter를 누릅니다. 다른 API의 화면, 미승인 신청, 비공식 API 주소는
+거부합니다. 키는 출력하지 않으며 `.runtime/collector.env`에만 저장합니다.
+발견한 End Point와 현재 수집기 주소의 일치 여부는 Git에서 제외된
+`.runtime/portal_application_status.json`에 기록합니다. 불일치하면 공식
+요청변수와 응답 구조를 확인한 뒤 수집 코드를 수정해야 합니다. 키 저장 후에도
+실호출 검증과 컨테이너 재시작이 필요합니다.
+
 기존 [`yongin-public-data-ai`](https://github.com/brian180099/yongin-public-data-ai)의 독립 수집 프로젝트입니다. 용인시 생활여가·문화·체육 MVP 대상만 수집합니다. [공공데이터포털 용인시 검색 결과](https://www.data.go.kr/tcs/dss/selectDataSetList.do?keyword=%EC%9A%A9%EC%9D%B8%EC%8B%9C&conditionType=search&org=&orgFilter=&orgFullName=)의 전체 351건은 수집 대상이 아닙니다.
 
 기본 실행 대상은 명시적으로 허용한 다섯 소스입니다. 검색 결과 전체를

@@ -18,6 +18,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
+portal = ["playwright>=1.58,<2"]
 
 [project.scripts]
 yongin-collect = "yongin_collector.cli:main"

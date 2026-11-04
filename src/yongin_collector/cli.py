@@ -22,6 +22,7 @@ def main() -> int:
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
+    load_dotenv(ROOT / ".runtime" / "collector.env", override=True)
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     logging.getLogger("httpcore").setLevel(logging.WARNING)

@@ -35,7 +35,8 @@ SOURCES = {
     "public_facilities": Source(
         "public_facilities", "api",
         "https://api.data.go.kr/openapi/tn_pubr_public_pblfclt_opn_info_api",
-        "15013117"
+        "15013117",
+        application_url="https://www.data.go.kr/data/15013117/standard.do",
     ),
     "vehicle_registrations": Source(
         "vehicle_registrations", "portal_file",
