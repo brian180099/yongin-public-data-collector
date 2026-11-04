@@ -41,9 +41,9 @@ API 활용신청이 승인되면 인증키를 로컬 CLI와 Docker 수집 서비
 `.runtime/collector.env`에 저장할 수 있습니다. 로그인과 신청 확정은 포털에서
 직접 수행합니다.
 
-키를 직접 복사해 넣는 방식이 기본입니다. 포털에서 **디코딩 인증키**를 복사한 뒤
-아래 명령에 붙여넣으세요. 입력값은 터미널에 표시되지 않고 명령 기록에도 남지
-않습니다. `.runtime/collector.env`의 다른 DB 설정은 유지됩니다.
+직접 입력도 가능합니다. 포털에서 **디코딩 인증키**를 복사한 뒤 아래 명령에
+붙여넣으세요. 입력값은 터미널에 표시되지 않고 명령 기록에도 남지 않습니다.
+`.runtime/collector.env`의 다른 DB 설정은 유지됩니다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/configure_public_data_key.py
@@ -54,21 +54,21 @@ n8n 워크플로 `YONGIN_01_공공데이터_수집갱신`에는 키를 넣지 �
 `http://yongin-collector:8080`의 수집 서비스를 호출하고, 이 서비스만 로컬
 비밀 파일에서 키를 읽습니다. 포털 인증키를 여러 API에 재사용할 수 있어도
 **각 API의 활용신청 승인과 실제 응답 검증은 별개**입니다. 공공시설 API는
-승인·실호출·파서 검증 전까지 자동 대상에서 비활성으로 둡니다.
+운영 DB용 API 레코드 파서 검증 전까지 자동 대상에서 비활성으로 둡니다.
 
 ```powershell
-python -m pip install -e ".[portal]"
-python -m playwright install chromium
-python scripts/sync_portal_application.py --source public_facilities
+.\.venv\Scripts\python.exe -m pip install -e ".[portal]"
+.\.venv\Scripts\python.exe scripts/sync_portal_application.py --source public_facilities
 ```
 
-브라우저에서 로그인한 뒤 **공공시설개방정보의 승인된 활용신청 상세**를 열고
-터미널에서 Enter를 누릅니다. 다른 API의 화면, 미승인 신청, 비공식 API 주소는
-거부합니다. 키는 출력하지 않으며 `.runtime/collector.env`에만 저장합니다.
-발견한 End Point와 현재 수집기 주소의 일치 여부는 Git에서 제외된
-`.runtime/portal_application_status.json`에 기록합니다. 불일치하면 공식
-요청변수와 응답 구조를 확인한 뒤 수집 코드를 수정해야 합니다. 키 저장 후에도
-실호출 검증과 컨테이너 재시작이 필요합니다.
+스크립트가 새 Chrome 창을 열면 **로그인만 직접 완료**하세요. 이후 승인 목록에서
+`전국공공시설개방정보표준데이터`를 찾아 상세 화면으로 이동하고, 데이터명·승인
+상태·End Point·인증키를 검사합니다. 후보 키로 API 응답을 먼저 확인한 뒤
+`.runtime/collector.env`에 저장합니다. 다른 API나 호출 실패 시 기존 키를
+유지합니다. 키·쿠키는 출력하거나 n8n에 넣지 않습니다. 결과 상태는 Git에서
+제외된 `.runtime/portal_application_status.json`에 기록합니다. 저장 후에는
+위의 `docker compose ... --force-recreate` 명령으로 수집 컨테이너를 다시 만들어
+새 키를 적용합니다. 실제 로그인 화면 흐름은 아직 실행 검증하지 않았습니다.
 
 기존 [`yongin-public-data-ai`](https://github.com/brian180099/yongin-public-data-ai)의 독립 수집 프로젝트입니다. 용인시 생활여가·문화·체육 MVP 대상만 수집합니다. [공공데이터포털 용인시 검색 결과](https://www.data.go.kr/tcs/dss/selectDataSetList.do?keyword=%EC%9A%A9%EC%9D%B8%EC%8B%9C&conditionType=search&org=&orgFilter=&orgFullName=)의 전체 351건은 수집 대상이 아닙니다.
 
