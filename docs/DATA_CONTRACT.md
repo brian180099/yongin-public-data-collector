@@ -1,7 +1,7 @@
 # 용인 생활여가 수집·분석 데이터 계약
 
-- 계약 버전: `1.2.0`
-- 기준일: 2026-11-04 (Asia/Seoul)
+- 계약 버전: `1.3.0`
+- 기준일: 2026-11-05 (Asia/Seoul)
 - 스키마 소유자: `yongin-public-data-collector`
 - 적용 범위: 용인시 생활여가·문화·체육 MVP와 승인된 자동차 등록현황 확장
 
@@ -110,6 +110,10 @@ Supabase 비공개 Storage 버킷·객체 경로를 기록한다. 원본 바이�
   `town`, 용도별 `government_count`, `private_count`, `commercial_count`,
   차종별 `passenger_count`, `van_count`, `truck_count`, `special_count` 정수,
   `reference_date`, `source_url`, `last_success_at`
+- `analytics.public_facilities`: 용인시 개방시설의 `record_key`,
+  `facility_name`, `place_name`, `facility_type`, `address`, `district`,
+  `provider_name`, `homepage_url`, `latitude`, `longitude`, `reference_date`,
+  `source_url`, `last_success_at`. 좌표는 원본 문자열로 보존하며 결측은 `null`.
 - `analytics.dataset_sources`: 데이터셋명, 제공기관, 원본 상세 URL, 데이터 기준일,
   최근 정상 수집일과 마지막 정상 갱신일. 분석 응답의 출처 표시용.
 
@@ -160,9 +164,13 @@ Supabase 비공개 Storage 버킷·객체 경로를 기록한다. 원본 바이�
 - 공식명: 전국공공시설개방정보표준데이터
 - 용인 범위: 도로명 또는 지번 주소에 `용인시`가 있는 레코드
 - 접근: 공공데이터포털 활용신청·인증키 필요
-- 현재 상태: 원본 API 8페이지 확보, 용인시 주소 97건. 운영 DB 적재와
-  안정 고유키 검증은 아직 완료되지 않음
-- 지원 분석: 운영 DB 품질 검증 후 확정
+- 현재 상태: 원본 API 8페이지와 운영 DB 용인시 주소 97건. 기준일 2026-09-30.
+  재실행 97건 변경 없음. 기관코드·시설명·장소명 조합은 현재 97건에서
+  결측·중복 0건이지만 공식 시설 ID는 아니다. 이름 변경은 삭제 후보와
+  신규 행으로 나타날 수 있다.
+- 지원 분석: 읽기 뷰에서 시설 검색·지역별 건수 계산 가능.
+  현재 질문 분석 워크플로에는 아직 연결되지 않았다. 원본 행의 존재를
+  시설 운영 여부·예약 가능 여부로 해석하지 않는다.
 
 ### 후속 후보
 
@@ -190,3 +198,5 @@ Supabase 비공개 Storage를 우선 목표로 한다. 현재는 Storage 서버 
 - `1.1.1` (2026-11-04): 런타임 로그인 분리와 비밀정보 파일 경로를 명시.
 - `1.2.0` (2026-11-04): 승인된 교통 CSV 확장을 `collector`에 등록하고
   `analytics.vehicle_registrations` 읽기 뷰, 키·기준일·품질 규칙을 추가.
+- `1.3.0` (2026-11-05): 공공시설 API 전체 페이지 품질 검사와 용인시 97건
+  운영 적재, 분석용 읽기 뷰, n8n 자동 수집 대상 활성화를 추가.

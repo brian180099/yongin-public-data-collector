@@ -60,7 +60,8 @@ API 응답은 최상위 `header`·`body` 구조이며 `items.item`에 행이 담
 `referenceDate`를 검증한다. 서버가 도시 부분 검색을 지원하지 않아
 전국 응답 8페이지를 **원본 바이트 그대로** 로컬에 보존하고, 페이지별
 용인시 건수를 sidecar 메타데이터에 구분해 기록한다. 운영 DB에는 아직
-적재하지 않았으며 분석 서비스는 이 97건을 아직 조회하지 않는다.
+`collector.dataset_records`에 적재했고 `analytics.public_facilities` 읽기
+뷰에서 97건을 확인했다. 질문 분석 서비스의 시설 의도에는 아직 연결하지 않았다.
 
 ### 추가 후보 `suji_programs`
 

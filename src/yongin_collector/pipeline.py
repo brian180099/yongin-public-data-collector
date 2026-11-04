@@ -16,7 +16,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .collect import collect
+from .collect import _api_items, collect
 from .sources import SOURCES
 from .store import Store
 
@@ -152,6 +152,71 @@ def validate_vehicle_snapshot(snapshot: PreparedSnapshot) -> PreparedSnapshot:
     return snapshot
 
 
+FACILITY_KEY_COLUMNS = ("insttCode", "openFcltyNm", "openLcNm")
+
+
+def prepare_facility_snapshot(store: Store, result: dict[str, Any]) -> tuple[
+        PreparedSnapshot, list[dict[str, Any]]]:
+    """Validate every official API page before publishing Yongin records."""
+    pages = result["pages"]
+    manifest = store.manifest("public_facilities")
+    metadata_list: list[dict[str, Any]] = []
+    records: dict[str, dict[str, Any]] = {}
+    hashes: dict[str, str] = {}
+    reference_dates: set[date] = set()
+    source_count = 0
+    for page_no in range(1, pages + 1):
+        metadata = manifest["items"].get(f"page_{page_no}")
+        if not metadata:
+            raise QualityError("API manifest is missing a collected page")
+        path = store.raw / "public_facilities" / metadata["filename"]
+        if not path.is_file():
+            raise QualityError("API raw page is missing")
+        raw = path.read_bytes()
+        if hashlib.sha256(raw).hexdigest() != metadata["sha256"]:
+            raise QualityError("API raw page hash mismatch")
+        try:
+            items, total = _api_items(json.loads(raw))
+        except (ValueError, TypeError) as exc:
+            raise QualityError("API raw page has invalid JSON or schema") from exc
+        if total != result["source_total_count"]:
+            raise QualityError("API total count differs across pages")
+        source_count += len(items)
+        metadata_list.append(metadata)
+        for item in items:
+            addresses = str(item.get("rdnmadr") or "") + str(item.get("lnmadr") or "")
+            if "용인시" not in addresses:
+                continue
+            normalized = {name: (value.strip() or None) if isinstance(value, str)
+                          else value for name, value in item.items()}
+            key_parts = [str(normalized.get(name) or "")
+                         for name in FACILITY_KEY_COLUMNS]
+            if not all(key_parts):
+                raise QualityError("facility stable-key field is missing")
+            record_key = "\x1f".join(key_parts)
+            if record_key in records:
+                raise QualityError("duplicate facility record key")
+            reference = normalized.get("referenceDate")
+            try:
+                reference_dates.add(date.fromisoformat(str(reference)))
+            except ValueError as exc:
+                raise QualityError("facility reference date is invalid") from exc
+            records[record_key] = normalized
+            hashes[record_key] = _canonical_hash(normalized)
+    if source_count != result["source_total_count"] or len(records) != result["found"]:
+        raise QualityError("API snapshot page or Yongin count mismatch")
+    if not records or len(reference_dates) != 1:
+        raise QualityError("facility snapshot is empty or has mixed reference dates")
+    return PreparedSnapshot(
+        records=records, hashes=hashes,
+        reference_date=next(iter(reference_dates)),
+        quality={"passed": True, "record_count": len(records),
+                 "source_record_count": source_count, "pages": pages,
+                 "duplicate_key_count": 0, "missing_required_count": 0,
+                 "address_filter": "용인시 in rdnmadr or lnmadr"},
+    ), metadata_list
+
+
 def compare_snapshot(snapshot: PreparedSnapshot,
                      previous: dict[str, dict[str, Any]], *,
                      full_snapshot: bool) -> dict[str, list[str]]:
@@ -261,16 +326,23 @@ def run_collection(dataset_id: str, trigger_type: str = "manual") -> dict[str, A
             source, store, os.getenv("DATA_GO_KR_SERVICE_KEY"), mode="daily"
         )
         store.record_checked(dataset_id, result)
-        metadata, path = _latest_artifact(store, dataset_id)
-        raw = path.read_bytes()
-        if source.kind != "portal_file" or path.suffix.lower() != ".csv":
+        if dataset_id == "public_facilities":
+            snapshot, artifacts = prepare_facility_snapshot(store, result)
+            metadata = artifacts[0]
+        elif source.kind == "portal_file":
+            metadata, path = _latest_artifact(store, dataset_id)
+            if path.suffix.lower() != ".csv":
+                raise PipelineError("operational parser is not implemented for this source")
+            raw = path.read_bytes()
+            snapshot = prepare_csv_snapshot(
+                raw,
+                unique_key_columns=list(dataset["unique_key_columns"]),
+                required_columns=list(dataset["required_columns"]),
+                reference_date_column=dataset["reference_date_column"],
+            )
+            artifacts = [metadata]
+        else:
             raise PipelineError("operational parser is not implemented for this source")
-        snapshot = prepare_csv_snapshot(
-            raw,
-            unique_key_columns=list(dataset["unique_key_columns"]),
-            required_columns=list(dataset["required_columns"]),
-            reference_date_column=dataset["reference_date_column"],
-        )
         if dataset_id == "vehicle_registrations":
             snapshot = validate_vehicle_snapshot(snapshot)
 
@@ -403,18 +475,22 @@ def run_collection(dataset_id: str, trigger_type: str = "manual") -> dict[str, A
                 modified_count = 0 if baseline else len(changes["modified"])
                 change_count = added_count + modified_count + deleted_count
                 status = "success" if baseline or change_count else "no_change"
-                relative_path = f"raw/{dataset_id}/{metadata['filename']}"
-                conn.execute("""
+                for artifact in artifacts:
+                    relative_path = f"raw/{dataset_id}/{artifact['filename']}"
+                    conn.execute("""
                     insert into collector.raw_artifacts(
                       run_id, dataset_id, sha256, byte_count, content_type,
                       original_filename, collected_at, reference_date, local_path
                     ) values (%s,%s,%s,%s,%s,%s,%s,%s,%s)
                     on conflict (dataset_id, sha256) do nothing
                 """, (
-                    run_id, dataset_id, metadata["sha256"], metadata["byte_count"],
-                    metadata.get("content_type"), metadata.get("original_filename"),
-                    metadata["collected_at"], snapshot.reference_date, relative_path,
-                ))
+                        run_id, dataset_id, artifact["sha256"], artifact["byte_count"],
+                        artifact.get("content_type"), artifact.get("original_filename"),
+                        artifact["collected_at"], snapshot.reference_date, relative_path,
+                    ))
+                run_raw_sha = metadata["sha256"] if len(artifacts) == 1 else None
+                run_raw_path = (f"raw/{dataset_id}/{metadata['filename']}"
+                                if len(artifacts) == 1 else None)
                 conn.execute("""
                     update collector.collection_runs set
                       status=%s, is_baseline=%s, finished_at=now(),
@@ -428,7 +504,7 @@ def run_collection(dataset_id: str, trigger_type: str = "manual") -> dict[str, A
                     status, baseline, metadata["collected_at"], snapshot.reference_date,
                     len(snapshot.records), baseline_count, added_count,
                     modified_count, deleted_count, len(changes["unchanged"]),
-                    metadata["sha256"], relative_path, Jsonb(snapshot.quality),
+                    run_raw_sha, run_raw_path, Jsonb(snapshot.quality),
                     Jsonb(examples), run_id,
                 ))
                 conn.execute("""

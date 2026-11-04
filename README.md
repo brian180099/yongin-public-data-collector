@@ -7,15 +7,15 @@
 <http://localhost:8090/>입니다. 브라우저 요청은 별도 n8n 워크플로
 `YONGIN_02_생활여가_질문분석`을 거쳐 미리 정의된 읽기 전용 SQL로 계산됩니다.
 질문·계산·출처와 검증 범위는 [`docs/ANALYSIS_SERVICE.md`](docs/ANALYSIS_SERVICE.md)에
-기록했습니다. 공공시설 API와 다른 구 자료는 아직 적재되지 않아 시설 검색과
-구별 비교를 지원하지 않습니다. LLM 연결은 아직 없으며 현재 의도 분류는
+기록했습니다. 공공시설 97건은 DB에 적재됐지만 질문 분석 경로에는 아직
+연결되지 않아 시설 검색과 구별 비교를 지원하지 않습니다. LLM 연결은 아직 없으며 현재 의도 분류는
 규칙 기반입니다.
 
 허용 목록의 CSV 두 종은 운영 DB에 적재돼 있습니다: 기흥구 이벤트 781행,
 사용자가 승인한 교통 확장인 자동차 등록현황 42행. 자동차 자료는
 `analytics.vehicle_registrations` 읽기 뷰에서도 조회할 수 있습니다.
 도서관 신간도서는 XLSX, 수지구 프로그램은 HTML이므로 CSV 적재 대상이
-아닙니다. 공공시설 API는 원본 수집까지 완료했고 운영 DB 적재는 미완료입니다.
+아닙니다. 공공시설 API는 원본 수집과 운영 DB 적재를 검증했습니다.
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/apply_migrations.py --apply
@@ -28,14 +28,13 @@ docker compose -f compose.collector.yaml up -d --build
 <http://localhost:5678/workflow/YNGN01CollectWk1>. 두 워크플로는 별도입니다.
 수집과 분석은 `.runtime/`의 별도 PostgreSQL 로그인으로 실행합니다. 이 폴더는
 Git과 Docker 이미지·볼륨에서 제외됩니다. 서버 이전 시 `.runtime/`도 별도로
-안전하게 백업해야 합니다. 공공시설 API 원본 수집은 실호출을 검증했지만
-운영 DB 파서와 n8n 자동 대상 등록은 아직 완료되지 않았습니다.
+안전하게 백업해야 합니다. 공공시설 API도 운영 DB에 적재됐고 수집 n8n의
+활성 대상입니다. 첫 실제 예약 실행은 아직 관찰하지 못했습니다.
 
 API 활용신청이 승인되면 인증키를 로컬 CLI와 Docker 수집 서비스가 함께 읽는
 `.runtime/collector.env`의 `DATA_GO_KR_SERVICE_KEY`에 입력하고 수집 컨테이너를
-재시작해야 합니다. 분석 컨테이너에는 이 키를 전달하지 않습니다. 현재
-`public_facilities`는 비활성이고 API 운영 레코드 파서는 실응답으로 검증되지
-않았으므로 키 입력만으로 API 적재 완료가 되는 것은 아닙니다.
+재시작해야 합니다. 분석 컨테이너에는 이 키를 전달하지 않습니다.
+공공시설 API의 원본·DB 적재와 재실행은 실제 응답으로 검증했습니다.
 
 승인된 `public_facilities` 활용신청 상세의 키는 로컬 브라우저에서 읽어
 `.runtime/collector.env`에 저장할 수 있습니다. 로그인과 신청 확정은 포털에서
@@ -54,7 +53,7 @@ n8n 워크플로 `YONGIN_01_공공데이터_수집갱신`에는 키를 넣지 �
 `http://yongin-collector:8080`의 수집 서비스를 호출하고, 이 서비스만 로컬
 비밀 파일에서 키를 읽습니다. 포털 인증키를 여러 API에 재사용할 수 있어도
 **각 API의 활용신청 승인과 실제 응답 검증은 별개**입니다. 공공시설 API는
-운영 DB용 API 레코드 파서 검증 전까지 자동 대상에서 비활성으로 둡니다.
+공공시설은 원본·DB 검증 후 자동 수집 대상으로 활성화했습니다.
 
 ```powershell
 .\.venv\Scripts\python.exe -m pip install -e ".[portal]"
@@ -79,7 +78,7 @@ n8n 워크플로 `YONGIN_01_공공데이터_수집갱신`에는 키를 넣지 �
 |---|---|---|---|
 | `giheung_events` | [기흥구 이벤트 정보](https://www.data.go.kr/data/15136583/fileData.do) | 포털 공식 CSV 다운로드 | 실행 검증 |
 | `library_new_books` | [용인시 도서관 신간도서](https://www.data.go.kr/data/3038399/fileData.do) | 포털의 공식 XLSX 다운로드 요청 | 실행 검증 |
-| `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 원본 8페이지 수집·재실행 검증, 용인시 97건; 운영 DB 미적재 |
+| `public_facilities` | [공공시설개방정보](https://www.data.go.kr/data/15013117/standard.do) | 인증키가 필요한 Open API JSON | 원본 8페이지·운영 DB 용인시 97건 적재, n8n 수동 경로 검증 |
 | `vehicle_registrations` | [자동차 등록현황](https://www.data.go.kr/data/3035912/fileData.do) | 포털 공식 CSV 다운로드 | DB 42행 적재·재실행 검증 |
 | `vehicle_registrations_api` | [자동차 등록현황 Open API](https://www.data.go.kr/data/3035912/fileData.do) | 활용신청 후 ODCLOUD JSON | 승인 키 필요 |
 
