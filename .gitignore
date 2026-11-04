@@ -13,6 +13,9 @@ data/raw/*
 !data/raw/.gitkeep
 data/state/*
 !data/state/.gitkeep
+data/secrets/
+.runtime/
+data/analysis_state/
 .vscode/settings.json
 Thumbs.db
 Desktop.ini

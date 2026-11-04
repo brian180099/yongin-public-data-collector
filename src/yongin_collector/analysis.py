@@ -118,10 +118,7 @@ def analyze(question: str) -> dict:
                 with conn.cursor() as cursor:
                     cursor.execute("set transaction read only")
                     cursor.execute("set local statement_timeout = '5000ms'")
-                    # The current admin DSN is temporary. SET ROLE still enforces the
-                    # analytics-only grants until a dedicated login DSN is configured.
-                    if not os.getenv("SUPABASE_ANALYSIS_DB_URL"):
-                        cursor.execute("set local role yongin_analysis_reader")
+                    cursor.execute("set local role yongin_analysis_reader")
                     source = _source(cursor)
                     if monthly:
                         cursor.execute(

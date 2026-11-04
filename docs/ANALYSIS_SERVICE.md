@@ -46,13 +46,14 @@ Webhook: `POST http://localhost:5678/webhook/yongin-analysis-v1`.
 `ok`, `empty`, `clarification`, `unsupported`, `error`다. 출처에는
 데이터셋명·기관·기준일·수집일·마지막 정상 갱신일·원본 URL을 포함하고
 없는 값은 `null`로 둔다. 데이터베이스 오류 시 수치를 만들지 않는다.
-`data/state/analysis_queries.jsonl`에는 질문 원문 없이 요청 ID, 의도,
+호스트의 `data/analysis_state/analysis_queries.jsonl`에는 질문 원문 없이 요청 ID, 의도,
 `query_id`, 필터, 결과 행 수, 상태를 기록한다.
 
 ## 실행
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/apply_migrations.py --apply
+.\.venv\Scripts\python.exe scripts/provision_runtime_roles.py
 docker compose -f compose.collector.yaml up -d --build
 ```
 
@@ -60,15 +61,15 @@ docker compose -f compose.collector.yaml up -d --build
 기존 Docker `n8n_default` 네트워크와 n8n 2.31.7이 필요하다. n8n 워크플로는
 `workflows/n8n/yongin-analysis-v1.json`을 별도 ID로 가져와 게시한다.
 CLI 게시 후 실행 중인 n8n에는 Webhook 등록을 위해 컨테이너 재시작이 필요하다.
-서버 이전 시 `.env`, `data/`와 n8n의 기존 SQLite 볼륨·암호화 키를 안전하게
+서버 이전 시 `.env`, `.runtime/`, `data/`와 n8n의 기존 SQLite 볼륨·암호화 키를 안전하게
 백업·복원하고 Compose 외부 네트워크명을 확인한다.
 
 ## 현재 제한
 
 - LLM 키가 없어 규칙 기반 의도 분류와 계산 결과의 고정 문장을 사용한다.
   LLM 설명 단계와 정확도 평가는 미구현이다.
-- 별도 분석 로그인 비밀정보가 없어 분석 컨테이너가 기존 DB 연결 문자열로
-  접속한 뒤 읽기 전용 트랜잭션과 `SET ROLE`을 적용한다. 운영 배포 전
-  `SUPABASE_ANALYSIS_DB_URL`에 별도 읽기 전용 로그인 DSN을 설정하고 기존
-  관리자 DSN을 분석 컨테이너 환경에서 제거해야 한다.
+- 분석 컨테이너는 별도 `yongin_analysis_login`으로 접속하며 읽기 전용
+  트랜잭션과 `SET ROLE yongin_analysis_reader`를 적용한다. 수집 컨테이너는
+  `yongin_collector_login`으로 접속한다. `.runtime/`은 컨테이너 볼륨으로
+  마운트하지 않는다.
 - 로컬 PC가 종료되거나 절전 중이면 n8n 예약 실행과 질문 서비스가 동작하지 않는다.

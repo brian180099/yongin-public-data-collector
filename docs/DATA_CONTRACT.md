@@ -1,6 +1,6 @@
 # 용인 생활여가 수집·분석 데이터 계약
 
-- 계약 버전: `1.1.0`
+- 계약 버전: `1.1.1`
 - 기준일: 2026-11-04 (Asia/Seoul)
 - 스키마 소유자: `yongin-public-data-collector`
 - 적용 범위: 용인시 생활여가·문화·체육 데이터셋 3~5개
@@ -18,8 +18,11 @@
 | `yongin_collector_writer` | 수집 서비스 그룹 역할(NOLOGIN) | `collector` 읽기·쓰기 |
 | `yongin_analysis_reader` | 분석 서비스 그룹 역할(NOLOGIN) | `analytics` 읽기 |
 
-두 그룹 역할 자체에는 비밀번호가 없다. 운영에서는 별도 로그인 역할을 만들고
-각 그룹 역할만 부여한다. Supabase `postgres` 계정은 마이그레이션에만 사용하며
+두 그룹 역할 자체에는 비밀번호가 없다. 로컬 운영에서는
+`scripts/provision_runtime_roles.py`가 `yongin_collector_login`과
+`yongin_analysis_login`을 만들고 각 그룹 역할만 부여했다. 비밀정보는 Git에서
+제외된 `.runtime/collector.env`, `.runtime/analysis.env`에 각각 저장한다.
+Supabase `postgres` 계정은 마이그레이션·역할 프로비저닝에만 사용하며
 일상 수집이나 분석 서비스의 런타임 계정으로 사용하지 않는다.
 
 ## 테이블
@@ -174,3 +177,4 @@ Supabase 비공개 Storage를 우선 목표로 한다. 현재는 Storage 서버 
   공공시설 API 미검증 상태 정의.
 - `1.1.0` (2026-11-04): 분석 응답의 출처 뷰와 정의된 행사 건수 조회 계약 추가.
   실제 질문·SQL·제한은 `docs/ANALYSIS_SERVICE.md` 참조.
+- `1.1.1` (2026-11-04): 런타임 로그인 분리와 비밀정보 파일 경로를 명시.

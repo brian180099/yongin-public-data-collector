@@ -7,6 +7,7 @@
 __pycache__
 *.pyc
 data
+.runtime
 dist
 build
 *.egg-info

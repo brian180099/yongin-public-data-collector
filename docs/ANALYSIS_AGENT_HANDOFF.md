@@ -14,8 +14,8 @@
 1. 수집 담당 워크플로 YNGN01CollectWk1
    - 공공데이터 → Python 수집 서비스 → Supabase collector 스키마.
    - 수집 에이전트가 소유한다. 이 워크플로를 수정·실행·게시하지 마.
-   - 현재 등록되어 있으나 비활성이다. Python CSV 적재/무변경은 검증했고,
-     n8n 전체 수동 실행 성공은 아직 확인하지 못했다.
+   - 현재 매주 월요일 09:00(Asia/Seoul)으로 게시되어 있다. n8n 전체
+     수동 실행에서 기흥구 CSV 781건 `no_change`, 실패 0건을 확인했다.
 2. 질문 분석 담당 워크플로 YNGN02AnalysisV1
    - 외부 화면 → 질문 Webhook → Python 분석 서비스 → Supabase analytics 뷰
      → 근거 포함 JSON → 외부 화면.

@@ -13,13 +13,22 @@
 
 ```powershell
 .\.venv\Scripts\python.exe scripts/apply_migrations.py --apply
+.\.venv\Scripts\python.exe scripts/provision_runtime_roles.py
 docker compose -f compose.collector.yaml up -d --build
 ```
 
 기존 n8n 2.31.7의 `n8n_default` 네트워크가 필요합니다. 분석 워크플로 편집:
 <http://localhost:5678/workflow/YNGN02AnalysisV1>. 수집 워크플로 편집:
 <http://localhost:5678/workflow/YNGN01CollectWk1>. 두 워크플로는 별도입니다.
-현재 인증키 없는 공공시설 API와 전용 분석 로그인 분리는 남은 운영 작업입니다.
+수집과 분석은 `.runtime/`의 별도 PostgreSQL 로그인으로 실행합니다. 이 폴더는
+Git과 Docker 이미지·볼륨에서 제외됩니다. 서버 이전 시 `.runtime/`도 별도로
+안전하게 백업해야 합니다. 공공시설 API는 인증키와 활용신청이 없어 미실행입니다.
+
+API 활용신청이 승인되면 인증키를 로컬 CLI용 `.env`와 Docker 수집 서비스용
+`.runtime/collector.env`의 `DATA_GO_KR_SERVICE_KEY`에 입력하고 수집 컨테이너를
+재시작해야 합니다. 분석 컨테이너에는 이 키를 전달하지 않습니다. 현재
+`public_facilities`는 비활성이고 API 운영 레코드 파서는 실응답으로 검증되지
+않았으므로 키 입력만으로 API 적재 완료가 되는 것은 아닙니다.
 
 기존 [`yongin-public-data-ai`](https://github.com/brian180099/yongin-public-data-ai)의 독립 수집 프로젝트입니다. 용인시 생활여가·문화·체육 MVP 대상만 수집합니다. [공공데이터포털 용인시 검색 결과](https://www.data.go.kr/tcs/dss/selectDataSetList.do?keyword=%EC%9A%A9%EC%9D%B8%EC%8B%9C&conditionType=search&org=&orgFilter=&orgFullName=)의 전체 351건은 수집 대상이 아닙니다.
 
@@ -94,7 +103,8 @@ python -m yongin_collector daily --source vehicle_registrations_api
 `workflows/n8n/yongin-weekly-collector.json`과
 `workflows/n8n/yongin-analysis-v1.json`을 등록했습니다.
 예전 템플릿을 현재 인스턴스에 중복 등록하지 마세요. 분석 워크플로는
-Webhook으로 실행 검증했으며, 수집 워크플로의 예약 실행은 비활성 상태입니다.
+Webhook으로 실행 검증했고, 수집 워크플로는 전체 수동 실행에서 781건
+`no_change`를 확인한 뒤 매주 월요일 09:00(Asia/Seoul)으로 게시했습니다.
 
 self-hosted n8n에서는 저장소와 가상환경을 준비한 뒤 UI의 **Import from
 File**로 템플릿을 가져오거나 지원되는 버전에서 아래처럼 가져옵니다.

@@ -6,7 +6,7 @@ services:
     container_name: yongin-collector
     restart: unless-stopped
     env_file:
-      - .env
+      - ./.runtime/collector.env
     environment:
       TZ: Asia/Seoul
       YONGIN_DATA_DIR: /app/data
@@ -23,12 +23,12 @@ services:
     container_name: yongin-analysis
     restart: unless-stopped
     env_file:
-      - .env
+      - ./.runtime/analysis.env
     environment:
       TZ: Asia/Seoul
       YONGIN_DATA_DIR: /app/data
     volumes:
-      - ./data:/app/data
+      - ./data/analysis_state:/app/data/state
     ports:
       - "127.0.0.1:8090:8080"
     networks:
