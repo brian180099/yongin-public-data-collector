@@ -24,7 +24,7 @@ docker compose -f compose.collector.yaml up -d --build
 Git과 Docker 이미지·볼륨에서 제외됩니다. 서버 이전 시 `.runtime/`도 별도로
 안전하게 백업해야 합니다. 공공시설 API는 인증키와 활용신청이 없어 미실행입니다.
 
-API 활용신청이 승인되면 인증키를 로컬 CLI용 `.env`와 Docker 수집 서비스용
+API 활용신청이 승인되면 인증키를 로컬 CLI와 Docker 수집 서비스가 함께 읽는
 `.runtime/collector.env`의 `DATA_GO_KR_SERVICE_KEY`에 입력하고 수집 컨테이너를
 재시작해야 합니다. 분석 컨테이너에는 이 키를 전달하지 않습니다. 현재
 `public_facilities`는 비활성이고 API 운영 레코드 파서는 실응답으로 검증되지
@@ -33,6 +33,21 @@ API 활용신청이 승인되면 인증키를 로컬 CLI용 `.env`와 Docker 수
 승인된 `public_facilities` 활용신청 상세의 키는 로컬 브라우저에서 읽어
 `.runtime/collector.env`에 저장할 수 있습니다. 로그인과 신청 확정은 포털에서
 직접 수행합니다.
+
+키를 직접 복사해 넣는 방식이 기본입니다. 포털에서 **디코딩 인증키**를 복사한 뒤
+아래 명령에 붙여넣으세요. 입력값은 터미널에 표시되지 않고 명령 기록에도 남지
+않습니다. `.runtime/collector.env`의 다른 DB 설정은 유지됩니다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/configure_public_data_key.py
+docker compose -f compose.collector.yaml up -d --no-deps --force-recreate yongin-collector
+```
+
+n8n 워크플로 `YONGIN_01_공공데이터_수집갱신`에는 키를 넣지 않습니다. n8n은
+`http://yongin-collector:8080`의 수집 서비스를 호출하고, 이 서비스만 로컬
+비밀 파일에서 키를 읽습니다. 포털 인증키를 여러 API에 재사용할 수 있어도
+**각 API의 활용신청 승인과 실제 응답 검증은 별개**입니다. 공공시설 API는
+승인·실호출·파서 검증 전까지 자동 대상에서 비활성으로 둡니다.
 
 ```powershell
 python -m pip install -e ".[portal]"
@@ -83,7 +98,7 @@ python -m yongin_collector status
 pytest
 ```
 
-`.env`에 공공데이터포털의 Decoding 인증키를 넣고 해당 API의 활용신청을 완료해야 `public_facilities`가 실행됩니다. 키를 Git에 커밋하거나 로그에 출력하지 마세요. 키가 없으면 파일과 웹페이지 수집은 계속하고 API 실패를 기록하며 명령은 종료 코드 1을 반환합니다.
+`.runtime/collector.env`에 공공데이터포털의 Decoding 인증키를 넣고 해당 API의 활용신청을 완료해야 `public_facilities` 실호출을 검증할 수 있습니다. 키를 Git에 커밋하거나 로그에 출력하지 마세요. 키가 없으면 파일과 웹페이지 수집은 계속하고 API 실패를 기록하며 명령은 종료 코드 1을 반환합니다.
 
 단일 소스 실행:
 
