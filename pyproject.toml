@@ -7,7 +7,14 @@ name = "yongin-public-data-collector"
 version = "0.1.0"
 description = "Scoped file and API raw collector for Yongin leisure public data"
 requires-python = ">=3.11"
-dependencies = ["httpx>=0.27,<1", "python-dotenv>=1,<2", "tzdata>=2025.2"]
+dependencies = [
+  "fastapi>=0.120,<1",
+  "httpx>=0.27,<1",
+  "psycopg[binary]>=3.2,<4",
+  "python-dotenv>=1,<2",
+  "tzdata>=2025.2",
+  "uvicorn>=0.38,<1",
+]
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<10"]
@@ -17,6 +24,9 @@ yongin-collect = "yongin_collector.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+yongin_collector = ["static/*.html"]
 
 [tool.pytest.ini_options]
 addopts = "-q"

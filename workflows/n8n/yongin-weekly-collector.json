@@ -1,0 +1,342 @@
+{
+  "id": "YNGN01CollectWk1",
+  "name": "YONGIN_01_공공데이터_수집갱신",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "7b384ad0-2024-4b15-b66d-010000000001",
+      "name": "수동 실행",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 180]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { trigger_type: 'manual', force: true } }];"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000002",
+      "name": "수동 실행 설정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 180]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "weeks",
+              "weeksInterval": 1,
+              "triggerAtDay": [1],
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000003",
+      "name": "매주 월요일 오전 9시",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [0, 380]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return [{ json: { trigger_type: 'schedule', force: false } }];"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000004",
+      "name": "주간 실행 설정",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 380]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'http://yongin-collector:8080/v1/datasets/due?force=' + $json.force + '&trigger_type=' + $json.trigger_type }}",
+        "authentication": "none",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000005",
+      "name": "수집 대상 및 갱신 필요 확인",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "position": [480, 280]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "condition-target-count",
+              "leftValue": "={{ $json.count }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000006",
+      "name": "수집 대상 있음?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [720, 280]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const body = $input.first().json; return body.datasets.map(dataset => ({ json: { ...dataset, trigger_type: body.trigger_type } }));"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000007",
+      "name": "데이터셋 목록 펼치기",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 180]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000008",
+      "name": "데이터셋별 반복",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1200, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'http://yongin-collector:8080/v1/collect/' + $json.dataset_id }}",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { 'trigger_type': $json.trigger_type } }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000009",
+      "name": "Python 수집·비교·반영 실행",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 5000,
+      "position": [1440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "condition-failed",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "failed",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000010",
+      "name": "실패 여부 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1680, 300]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.all().map(item => ({ json: { ...item.json, branch: 'failed' } }));"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000011",
+      "name": "실패 결과 정리",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1920, 180]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "condition-no-change",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "no_change",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000012",
+      "name": "변경 없음 여부 확인",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [1920, 380]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.all().map(item => ({ json: { ...item.json, branch: 'no_change' } }));"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000013",
+      "name": "변경 없음 결과 정리",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2160, 320]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "return $input.all().map(item => ({ json: { ...item.json, branch: 'success' } }));"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000014",
+      "name": "변경 반영 결과 정리",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2160, 480]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const body = $input.first().json; return [{ json: { status: 'no_targets', branch: 'no_targets', dataset_count: 0, trigger_type: body.trigger_type } }];"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000015",
+      "name": "갱신 대상 없음",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [960, 420]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const rows = $input.all().map(item => item.json); const failed = rows.filter(r => r.status === 'failed'); const sum = key => rows.reduce((total, row) => total + Number(row[key] || 0), 0); return [{ json: { workflow_status: failed.length ? 'partial_failure' : (rows[0]?.status === 'no_targets' ? 'no_targets' : 'success'), dataset_count: rows.filter(r => r.dataset_id).length, failed_count: failed.length, baseline_count: sum('baseline_count'), added_count: sum('added_count'), modified_count: sum('modified_count'), deleted_candidate_count: sum('deleted_candidate_count'), unchanged_count: sum('unchanged_count'), results: rows.map(r => ({ dataset_id: r.dataset_id, run_id: r.run_id, status: r.status, error_code: r.error_code, change_examples: (r.change_examples || []).slice(0, 5) })) } }];"
+      },
+      "id": "7b384ad0-2024-4b15-b66d-010000000016",
+      "name": "전체 결과 취합",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1440, 20]
+    }
+  ],
+  "connections": {
+    "수동 실행": {
+      "main": [[{"node": "수동 실행 설정", "type": "main", "index": 0}]]
+    },
+    "수동 실행 설정": {
+      "main": [[{"node": "수집 대상 및 갱신 필요 확인", "type": "main", "index": 0}]]
+    },
+    "매주 월요일 오전 9시": {
+      "main": [[{"node": "주간 실행 설정", "type": "main", "index": 0}]]
+    },
+    "주간 실행 설정": {
+      "main": [[{"node": "수집 대상 및 갱신 필요 확인", "type": "main", "index": 0}]]
+    },
+    "수집 대상 및 갱신 필요 확인": {
+      "main": [[{"node": "수집 대상 있음?", "type": "main", "index": 0}]]
+    },
+    "수집 대상 있음?": {
+      "main": [
+        [{"node": "데이터셋 목록 펼치기", "type": "main", "index": 0}],
+        [{"node": "갱신 대상 없음", "type": "main", "index": 0}]
+      ]
+    },
+    "데이터셋 목록 펼치기": {
+      "main": [[{"node": "데이터셋별 반복", "type": "main", "index": 0}]]
+    },
+    "데이터셋별 반복": {
+      "main": [
+        [{"node": "전체 결과 취합", "type": "main", "index": 0}],
+        [{"node": "Python 수집·비교·반영 실행", "type": "main", "index": 0}]
+      ]
+    },
+    "Python 수집·비교·반영 실행": {
+      "main": [[{"node": "실패 여부 확인", "type": "main", "index": 0}]]
+    },
+    "실패 여부 확인": {
+      "main": [
+        [{"node": "실패 결과 정리", "type": "main", "index": 0}],
+        [{"node": "변경 없음 여부 확인", "type": "main", "index": 0}]
+      ]
+    },
+    "변경 없음 여부 확인": {
+      "main": [
+        [{"node": "변경 없음 결과 정리", "type": "main", "index": 0}],
+        [{"node": "변경 반영 결과 정리", "type": "main", "index": 0}]
+      ]
+    },
+    "실패 결과 정리": {
+      "main": [[{"node": "데이터셋별 반복", "type": "main", "index": 0}]]
+    },
+    "변경 없음 결과 정리": {
+      "main": [[{"node": "데이터셋별 반복", "type": "main", "index": 0}]]
+    },
+    "변경 반영 결과 정리": {
+      "main": [[{"node": "데이터셋별 반복", "type": "main", "index": 0}]]
+    },
+    "갱신 대상 없음": {
+      "main": [[{"node": "전체 결과 취합", "type": "main", "index": 0}]]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Seoul"
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>용인 생활여가 데이터 질문</title>
+  <style>
+    :root {font-family:system-ui,sans-serif;color:#17212f;background:#f5f7fb}
+    body {max-width:920px;margin:32px auto;padding:0 18px}
+    main {background:white;padding:28px;border-radius:14px;box-shadow:0 3px 20px #14203b13}
+    h1 {font-size:1.7rem} h2 {font-size:1.1rem;margin-top:28px}
+    form {display:flex;gap:8px} input {flex:1;padding:12px;border:1px solid #bbc7d8;border-radius:8px;font-size:1rem}
+    button {padding:11px 16px;border:0;border-radius:8px;background:#1769bd;color:white;cursor:pointer}
+    .example {background:#e7eff9;color:#174a7d;margin:4px}
+    .muted {color:#657285} .error {color:#a42121}
+    table {border-collapse:collapse;width:100%;margin-top:12px} th,td {border:1px solid #dbe3ed;padding:9px;text-align:left}
+    th {background:#f0f4f9} .bar {display:flex;align-items:center;gap:8px;margin:6px 0}
+    .bar span:first-child {width:32px} .bar i {display:block;height:18px;background:#4c91d3;border-radius:3px}
+    a {overflow-wrap:anywhere}
+  </style>
+</head>
+<body><main>
+  <h1>용인 생활여가 공공데이터 질문</h1>
+  <p class="muted">현재 확인된 기흥구 행사 CSV 781건의 시작일 기준 건수를 조회합니다. 시설과 다른 구의 자료는 아직 제공하지 않습니다.</p>
+  <form id="ask-form"><input id="question" maxlength="300" aria-label="질문" placeholder="예: 기흥구 2024년 행사 몇 건이야?" required><button>질문하기</button></form>
+  <div id="examples"></div>
+  <p id="state" role="status"></p>
+  <section id="response" hidden>
+    <h2>답변</h2><p id="answer"></p>
+    <h2>결과</h2><div id="chart"></div><div id="table"></div>
+    <h2>계산 기준과 필터</h2><p id="calculation"></p>
+    <h2>출처</h2><div id="sources"></div>
+    <h2>해석 한계</h2><ul id="limitations"></ul>
+  </section>
+</main><script>
+  const $=id=>document.getElementById(id);
+  fetch('/v1/analysis/examples').then(r=>r.json()).then(data=>{
+    for(const q of data.questions){const b=document.createElement('button');b.className='example';b.textContent=q;b.onclick=()=>{$('question').value=q;$('ask-form').requestSubmit()};$('examples').append(b)}
+  });
+  $('ask-form').addEventListener('submit',async event=>{
+    event.preventDefault();$('state').textContent='조회 중…';$('state').className='muted';$('response').hidden=true;
+    try {
+      const response=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:$('question').value})});
+      const data=await response.json();if(!response.ok)throw new Error(data.detail||'요청 실패');
+      $('state').textContent=data.status==='ok'?'조회 완료':`상태: ${data.status}`;
+      $('answer').textContent=data.answer;$('response').hidden=false;
+      const rows=data.result||[];const table=$('table');table.replaceChildren();$('chart').replaceChildren();
+      if(rows.length){const t=document.createElement('table');const keys=Object.keys(rows[0]);const head=t.insertRow();for(const key of keys){const th=document.createElement('th');th.textContent=key;head.append(th)}for(const row of rows){const tr=t.insertRow();for(const key of keys){const td=tr.insertCell();td.textContent=String(row[key]??'—')}}table.append(t)}
+      if(data.visualization?.type==='bar'){const max=Math.max(...rows.map(r=>r.count),1);for(const row of rows){const bar=document.createElement('div');bar.className='bar';const label=document.createElement('span');label.textContent=`${row.month}월`;const line=document.createElement('i');line.style.width=`${Math.round(row.count/max*70)}%`;const count=document.createElement('span');count.textContent=String(row.count);bar.append(label,line,count);$('chart').append(bar)}}
+      $('calculation').textContent=`필터: ${JSON.stringify(data.filters)} / ${data.calculation?.measure||'—'} / 날짜: ${data.calculation?.date_field||'—'} / 지역: ${data.calculation?.region||'—'}`;
+      $('sources').replaceChildren();for(const source of data.sources||[]){const p=document.createElement('p');p.textContent=`${source.dataset_name} · ${source.provider} · 기준일 ${source.reference_date||'확인하지 못함'} · 수집일 ${source.collected_at||'확인하지 못함'} · `;const a=document.createElement('a');a.href=source.url;a.textContent='공식 원본';a.target='_blank';a.rel='noopener';p.append(a);$('sources').append(p)}
+      $('limitations').replaceChildren();for(const value of data.limitations||[]){const li=document.createElement('li');li.textContent=value;$('limitations').append(li)}
+    }catch(error){$('state').textContent=error.message;$('state').className='error'}
+  });
+</script></body></html>

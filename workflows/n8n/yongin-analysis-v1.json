@@ -1,0 +1,68 @@
+{
+  "id": "YNGN02AnalysisV1",
+  "name": "YONGIN_02_생활여가_질문분석",
+  "active": false,
+  "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul"},
+  "nodes": [
+    {
+      "id": "4bfed992-878a-4f70-8b1b-100000000001",
+      "name": "외부 질문 받기",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [0, 180],
+      "webhookId": "yongin-analysis-v1",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "yongin-analysis-v1",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "4bfed992-878a-4f70-8b1b-100000000002",
+      "name": "질문 입력 검증",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 180],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const question = $input.first().json.body?.question; if (typeof question !== 'string') { return [{ json: { question: '' } }]; } return [{ json: { question: question.slice(0, 301) } }];"
+      }
+    },
+    {
+      "id": "4bfed992-878a-4f70-8b1b-100000000003",
+      "name": "허용된 분석 조회 실행",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [480, 180],
+      "parameters": {
+        "method": "POST",
+        "url": "http://yongin-analysis:8080/v1/analyze",
+        "authentication": "none",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ { question: $json.question } }}",
+        "options": {"timeout": 20000}
+      }
+    },
+    {
+      "id": "4bfed992-878a-4f70-8b1b-100000000004",
+      "name": "근거 포함 JSON 응답",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [720, 180],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      }
+    }
+  ],
+  "connections": {
+    "외부 질문 받기": {"main": [[{"node": "질문 입력 검증", "type": "main", "index": 0}]]},
+    "질문 입력 검증": {"main": [[{"node": "허용된 분석 조회 실행", "type": "main", "index": 0}]]},
+    "허용된 분석 조회 실행": {"main": [[{"node": "근거 포함 JSON 응답", "type": "main", "index": 0}]]}
+  }
+}

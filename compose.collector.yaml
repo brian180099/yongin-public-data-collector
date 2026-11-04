@@ -1,0 +1,39 @@
+services:
+  yongin-collector:
+    build:
+      context: .
+      dockerfile: Dockerfile.collector
+    container_name: yongin-collector
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Seoul
+      YONGIN_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8088:8080"
+    networks:
+      - n8n_default
+  yongin-analysis:
+    build:
+      context: .
+      dockerfile: Dockerfile.analysis
+    container_name: yongin-analysis
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Seoul
+      YONGIN_DATA_DIR: /app/data
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8090:8080"
+    networks:
+      - n8n_default
+
+networks:
+  n8n_default:
+    external: true

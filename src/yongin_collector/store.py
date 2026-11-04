@@ -11,8 +11,9 @@ from zoneinfo import ZoneInfo
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RAW = ROOT / "data" / "raw"
-STATE = ROOT / "data" / "state"
+DATA_ROOT = Path(os.getenv("YONGIN_DATA_DIR", ROOT / "data")).resolve()
+RAW = DATA_ROOT / "raw"
+STATE = DATA_ROOT / "state"
 KST = ZoneInfo("Asia/Seoul")
 SAFE_ID = re.compile(r"^[a-z0-9_]+$")
 

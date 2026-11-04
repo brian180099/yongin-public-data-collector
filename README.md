@@ -1,5 +1,26 @@
 # 용인 공공데이터 원본 수집기
 
+## 질문·분석 MVP (2026-11-04)
+
+현재 실제 적재된 기흥구 이벤트 781건에 대해 전체 건수, 연도별 건수,
+연도 내 월별 건수를 질문할 수 있습니다. 외부 질문 화면은
+<http://localhost:8090/>입니다. 브라우저 요청은 별도 n8n 워크플로
+`YONGIN_02_생활여가_질문분석`을 거쳐 미리 정의된 읽기 전용 SQL로 계산됩니다.
+질문·계산·출처와 검증 범위는 [`docs/ANALYSIS_SERVICE.md`](docs/ANALYSIS_SERVICE.md)에
+기록했습니다. 공공시설 API와 다른 구 자료는 아직 적재되지 않아 시설 검색과
+구별 비교를 지원하지 않습니다. LLM 연결은 아직 없으며 현재 의도 분류는
+규칙 기반입니다.
+
+```powershell
+.\.venv\Scripts\python.exe scripts/apply_migrations.py --apply
+docker compose -f compose.collector.yaml up -d --build
+```
+
+기존 n8n 2.31.7의 `n8n_default` 네트워크가 필요합니다. 분석 워크플로 편집:
+<http://localhost:5678/workflow/YNGN02AnalysisV1>. 수집 워크플로 편집:
+<http://localhost:5678/workflow/YNGN01CollectWk1>. 두 워크플로는 별도입니다.
+현재 인증키 없는 공공시설 API와 전용 분석 로그인 분리는 남은 운영 작업입니다.
+
 기존 [`yongin-public-data-ai`](https://github.com/brian180099/yongin-public-data-ai)의 독립 수집 프로젝트입니다. 용인시 생활여가·문화·체육 MVP 대상만 수집합니다. [공공데이터포털 용인시 검색 결과](https://www.data.go.kr/tcs/dss/selectDataSetList.do?keyword=%EC%9A%A9%EC%9D%B8%EC%8B%9C&conditionType=search&org=&orgFilter=&orgFullName=)의 전체 351건은 수집 대상이 아닙니다.
 
 기본 실행 대상은 명시적으로 허용한 다섯 소스입니다. 검색 결과 전체를
@@ -60,11 +81,20 @@ python -m yongin_collector daily --source vehicle_registrations_api
 
 `data/raw/<source_id>/`에 원본 바이트를 SHA-256 파일명으로 보존하고 옆에 `*.metadata.json`을 둡니다. `data/state/<source_id>.json`은 마지막 확인, 현재 정상 파일별 해시, 성공·실패 실행 이력을 기록합니다. 수집일(`collected_at`)과 데이터 기준일(`reference_date`)은 별도 필드입니다. 파일명에서 기준일을 추론할 수 없으면 `null`입니다. API 메타데이터에는 HTTP 상태, 페이지·전체 건수, 필드 구조와 기준일 목록도 기록합니다. 파일과 이력은 Git에서 제외됩니다.
 
-정제와 Supabase 적재는 분석 서비스의 책임입니다. 두 프로젝트는 원본 폴더와 메타데이터 규격을 통해 연결합니다. 실제 운영에서는 두 환경이 접근할 수 있는 저장소를 별도로 정해야 합니다. 지속 볼륨, 분석 서비스의 읽기 전용 마운트 경로·권한과 보존 정책이 먼저 합의되어야 하며 자세한 전달 계약은 `docs/DATA_SOURCES.md`를 따릅니다.
+현재 운영 경로에서는 품질 검사를 통과한 기흥구 CSV의 정제·변경 비교와
+`collector` 스키마 반영을 Python 수집 서비스가 수행합니다. 분석 서비스는
+`analytics` 뷰를 읽습니다. 원본은 로컬 `data/raw` 볼륨에 보존합니다.
+서버 이전 시 `data/`와 n8n의 기존 볼륨·암호화 키를 함께 백업해야 합니다.
+저장 규격과 권한은 `docs/DATA_CONTRACT.md`를 따릅니다.
 
 ## n8n
 
-`workflows/n8n/daily-collector.json`은 self-hosted Linux n8n용 가져오기 템플릿입니다. `/opt/yongin-public-data-collector` 경로에 이 저장소와 Python 가상환경이 존재하도록 배치한 다음, n8n에서 워크플로를 가져와 실행 경로와 일정을 확인하세요. n8n Cloud에서는 Execute Command 노드가 제공되지 않을 수 있으므로 별도 실행 서버가 필요합니다. 실제 n8n 계정 연결·스케줄 실행은 아직 검증하지 않았습니다.
+`workflows/n8n/daily-collector.json`은 예전 self-hosted Linux n8n용
+가져오기 템플릿입니다. 현재 로컬 n8n에는 별도의
+`workflows/n8n/yongin-weekly-collector.json`과
+`workflows/n8n/yongin-analysis-v1.json`을 등록했습니다.
+예전 템플릿을 현재 인스턴스에 중복 등록하지 마세요. 분석 워크플로는
+Webhook으로 실행 검증했으며, 수집 워크플로의 예약 실행은 비활성 상태입니다.
 
 self-hosted n8n에서는 저장소와 가상환경을 준비한 뒤 UI의 **Import from
 File**로 템플릿을 가져오거나 지원되는 버전에서 아래처럼 가져옵니다.
