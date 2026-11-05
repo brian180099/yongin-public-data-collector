@@ -27,7 +27,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "const question = $input.first().json.body?.question; if (typeof question !== 'string') { return [{ json: { question: '' } }]; } return [{ json: { question: question.slice(0, 301) } }];"
+        "jsCode": "const body = $input.first().json.body ?? {}; const question = typeof body.question === 'string' ? body.question.slice(0, 500) : ''; const conversation_id = typeof body.conversation_id === 'string' ? body.conversation_id.slice(0, 80) : null; const history = Array.isArray(body.history) ? body.history.slice(-6).filter(m => m && ['user','assistant'].includes(m.role) && typeof m.content === 'string').map(m => ({role:m.role,content:m.content.slice(0,500)})) : []; return [{json:{question,conversation_id,history}}];"
       }
     },
     {
@@ -43,8 +43,8 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { question: $json.question } }}",
-        "options": {"timeout": 20000}
+        "jsonBody": "={{ { question: $json.question, conversation_id: $json.conversation_id, history: $json.history } }}",
+        "options": {"timeout": 30000}
       }
     },
     {

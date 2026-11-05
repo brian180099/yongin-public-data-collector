@@ -3,53 +3,57 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>용인 생활여가 데이터 질문</title>
+  <title>용인 공공데이터 대화</title>
   <style>
-    :root {font-family:system-ui,sans-serif;color:#17212f;background:#f5f7fb}
-    body {max-width:920px;margin:32px auto;padding:0 18px}
-    main {background:white;padding:28px;border-radius:14px;box-shadow:0 3px 20px #14203b13}
-    h1 {font-size:1.7rem} h2 {font-size:1.1rem;margin-top:28px}
-    form {display:flex;gap:8px} input {flex:1;padding:12px;border:1px solid #bbc7d8;border-radius:8px;font-size:1rem}
-    button {padding:11px 16px;border:0;border-radius:8px;background:#1769bd;color:white;cursor:pointer}
-    .example {background:#e7eff9;color:#174a7d;margin:4px}
-    .muted {color:#657285} .error {color:#a42121}
-    table {border-collapse:collapse;width:100%;margin-top:12px} th,td {border:1px solid #dbe3ed;padding:9px;text-align:left}
-    th {background:#f0f4f9} .bar {display:flex;align-items:center;gap:8px;margin:6px 0}
-    .bar span:first-child {width:32px} .bar i {display:block;height:18px;background:#4c91d3;border-radius:3px}
-    a {overflow-wrap:anywhere}
+    :root {font-family:system-ui,sans-serif;color:#17232d;background:#f2f5f7}
+    body {max-width:980px;margin:0 auto;padding:24px}
+    main {background:white;border-radius:18px;box-shadow:0 6px 28px #18314516;min-height:85vh;display:flex;flex-direction:column}
+    header {padding:24px 28px;border-bottom:1px solid #e4e9ee}
+    h1 {font-size:1.45rem;margin:0 0 8px} p {line-height:1.5}
+    .muted {color:#5d7180;font-size:.92rem;margin:0}
+    #messages {flex:1;padding:24px;display:flex;flex-direction:column;gap:16px;overflow-y:auto}
+    .message {max-width:90%;padding:13px 17px;border-radius:16px;line-height:1.55;overflow-wrap:anywhere}
+    .user {align-self:flex-end;background:#165f9e;color:white}
+    .assistant {align-self:flex-start;background:#eef3f7}
+    .message p {margin:0 0 8px}.message p:last-child {margin-bottom:0}
+    .meta {font-size:.82rem;color:#536777;margin-top:10px}
+    .error {color:#a42121}
+    #examples {padding:0 24px 12px;display:flex;flex-wrap:wrap;gap:7px}
+    .example {border:1px solid #c9d9e7;background:white;color:#24587d;border-radius:20px;padding:7px 10px;cursor:pointer}
+    form {display:flex;gap:9px;padding:16px 24px 24px;border-top:1px solid #e4e9ee}
+    input {flex:1;min-width:0;padding:13px;border:1px solid #b8c9d5;border-radius:10px;font-size:1rem}
+    form button {background:#165f9e;color:white;border:0;border-radius:10px;padding:0 20px;cursor:pointer}
+    button:disabled {opacity:.55;cursor:wait}
+    table {border-collapse:collapse;display:block;overflow-x:auto;max-width:100%;margin:12px 0;background:white}
+    th,td {border:1px solid #d7e0e7;padding:6px 9px;white-space:nowrap;text-align:left;font-size:.86rem}
+    .bar {display:flex;align-items:center;gap:8px;margin:5px 0;font-size:.85rem}
+    .bar .label {width:85px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .bar i {height:17px;background:#54a0d2;border-radius:3px;min-width:2px}
+    a {color:#165f9e}
   </style>
 </head>
 <body><main>
-  <h1>용인 생활여가 공공데이터 질문</h1>
-  <p class="muted">현재 확인된 기흥구 행사 CSV 781건의 시작일 기준 건수를 조회합니다. 시설과 다른 구의 자료는 아직 제공하지 않습니다.</p>
-  <form id="ask-form"><input id="question" maxlength="300" aria-label="질문" placeholder="예: 기흥구 2024년 행사 몇 건이야?" required><button>질문하기</button></form>
+  <header><h1>용인 공공데이터 대화</h1>
+    <p class="muted">용인시 생활여가·문화·체육 공공데이터를 질문하세요. CSV 57종의 원본 행과 건수를 조회할 수 있으며, 답변마다 출처와 기준일을 표시합니다.</p>
+    <p class="muted" id="mode"></p>
+  </header>
+  <section id="messages" aria-live="polite"></section>
   <div id="examples"></div>
-  <p id="state" role="status"></p>
-  <section id="response" hidden>
-    <h2>답변</h2><p id="answer"></p>
-    <h2>결과</h2><div id="chart"></div><div id="table"></div>
-    <h2>계산 기준과 필터</h2><p id="calculation"></p>
-    <h2>출처</h2><div id="sources"></div>
-    <h2>해석 한계</h2><ul id="limitations"></ul>
-  </section>
+  <form id="ask-form"><input id="question" maxlength="500" aria-label="공공데이터 질문" placeholder="예: 수지구 자동차 등록 대수가 가장 많은 동은?" required autocomplete="off"><button id="send">보내기</button></form>
 </main><script>
   const $=id=>document.getElementById(id);
-  fetch('/v1/analysis/examples').then(r=>r.json()).then(data=>{
-    for(const q of data.questions){const b=document.createElement('button');b.className='example';b.textContent=q;b.onclick=()=>{$('question').value=q;$('ask-form').requestSubmit()};$('examples').append(b)}
-  });
-  $('ask-form').addEventListener('submit',async event=>{
-    event.preventDefault();$('state').textContent='조회 중…';$('state').className='muted';$('response').hidden=true;
-    try {
-      const response=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question:$('question').value})});
-      const data=await response.json();if(!response.ok)throw new Error(data.detail||'요청 실패');
-      $('state').textContent=data.status==='ok'?'조회 완료':`상태: ${data.status}`;
-      $('answer').textContent=data.answer;$('response').hidden=false;
-      const rows=data.result||[];const table=$('table');table.replaceChildren();$('chart').replaceChildren();
-      if(rows.length){const t=document.createElement('table');const keys=Object.keys(rows[0]);const head=t.insertRow();for(const key of keys){const th=document.createElement('th');th.textContent=key;head.append(th)}for(const row of rows){const tr=t.insertRow();for(const key of keys){const td=tr.insertCell();td.textContent=String(row[key]??'—')}}table.append(t)}
-      if(data.visualization?.type==='bar'){const max=Math.max(...rows.map(r=>r.count),1);for(const row of rows){const bar=document.createElement('div');bar.className='bar';const label=document.createElement('span');label.textContent=`${row.month}월`;const line=document.createElement('i');line.style.width=`${Math.round(row.count/max*70)}%`;const count=document.createElement('span');count.textContent=String(row.count);bar.append(label,line,count);$('chart').append(bar)}}
-      $('calculation').textContent=`필터: ${JSON.stringify(data.filters)} / ${data.calculation?.measure||'—'} / 날짜: ${data.calculation?.date_field||'—'} / 지역: ${data.calculation?.region||'—'}`;
-      $('sources').replaceChildren();for(const source of data.sources||[]){const p=document.createElement('p');p.textContent=`${source.dataset_name} · ${source.provider} · 기준일 ${source.reference_date||'확인하지 못함'} · 수집일 ${source.collected_at||'확인하지 못함'} · `;const a=document.createElement('a');a.href=source.url;a.textContent='공식 원본';a.target='_blank';a.rel='noopener';p.append(a);$('sources').append(p)}
-      $('limitations').replaceChildren();for(const value of data.limitations||[]){const li=document.createElement('li');li.textContent=value;$('limitations').append(li)}
-    }catch(error){$('state').textContent=error.message;$('state').className='error'}
-  });
+  const conversationId=crypto.randomUUID();
+  const history=[];
+  const labels={count:'건수',month:'월',district:'구',town:'읍면동',title:'행사명',start_date:'시작일',end_date:'종료일',facility_name:'시설명',place_name:'장소명',facility_type:'시설 유형',address:'주소',homepage_url:'홈페이지',government_count:'관용',private_count:'자가용',commercial_count:'영업용',passenger_count:'승용',van_count:'승합',truck_count:'화물',special_count:'특수'};
+  function message(role,content){const el=document.createElement('article');el.className='message '+role;const p=document.createElement('p');p.textContent=content;el.append(p);$('messages').append(el);el.scrollIntoView({block:'end'});return el}
+  function render(data,box){
+    const rows=data.result||[];
+    if(rows.length){const table=document.createElement('table');const keys=Object.keys(rows[0]);const head=table.insertRow();for(const key of keys){const th=document.createElement('th');th.textContent=labels[key]||key;head.append(th)}for(const row of rows){const tr=table.insertRow();for(const key of keys){const cell=tr.insertCell();cell.textContent=String(row[key]??'—')}}box.append(table)}
+    if(data.visualization?.type==='bar'&&rows.length){const {x,y}=data.visualization;const max=Math.max(...rows.map(r=>Number(r[y])||0),1);for(const row of rows){const bar=document.createElement('div');bar.className='bar';const label=document.createElement('span');label.className='label';label.textContent=x==='month'?`${row[x]}월`:String(row[x]??'—');const line=document.createElement('i');line.style.width=`${Math.max(2,Math.round(Number(row[y])/max*65))}%`;const value=document.createElement('span');value.textContent=Number(row[y]).toLocaleString();bar.append(label,line,value);box.append(bar)}}
+    for(const source of data.sources||[]){const p=document.createElement('p');p.className='meta';p.append(document.createTextNode(`${source.dataset_name} · 기준일 ${source.reference_date||'미확인'} · 수집 ${source.collected_at||'미확인'} · `));const a=document.createElement('a');a.href=source.url;a.target='_blank';a.rel='noopener';a.textContent='공식 출처';p.append(a);box.append(p)}
+    if(data.limitations?.length){const p=document.createElement('p');p.className='meta';p.textContent=data.limitations.join(' ');box.append(p)}
+    if(data.interpreter==='rules'){const p=document.createElement('p');p.className='meta';p.textContent='기본 질문 해석으로 처리했습니다.';box.append(p)}
+  }
+  fetch('/v1/analysis/examples').then(r=>r.json()).then(data=>{ $('mode').textContent=data.llm_enabled?'AI 질문 해석 사용 중':'기본 질문 해석 사용 중 · AI 연결 대기';for(const q of data.questions){const b=document.createElement('button');b.type='button';b.className='example';b.textContent=q;b.onclick=()=>{$('question').value=q;$('ask-form').requestSubmit()};$('examples').append(b)}});
+  $('ask-form').addEventListener('submit',async event=>{event.preventDefault();const question=$('question').value.trim();if(!question)return;message('user',question);$('question').value='';$('send').disabled=true;const pending=message('assistant','분석 중…');try{const response=await fetch('/ask',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({question,conversation_id:conversationId,history:history.slice(-6)})});const data=await response.json();if(!response.ok)throw new Error(data.detail||'요청 실패');pending.firstChild.textContent=data.answer;render(data,pending);history.push({role:'user',content:question},{role:'assistant',content:data.answer});if(history.length>6)history.splice(0,history.length-6)}catch(error){pending.firstChild.textContent=error.message;pending.classList.add('error')}finally{$('send').disabled=false;$('question').focus();pending.scrollIntoView({block:'end'})}});
 </script></body></html>

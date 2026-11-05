@@ -1,12 +1,14 @@
 import hashlib
+import io
 import json
+import zipfile
 from pathlib import Path
 import sys
 
 import httpx
 
 from yongin_collector.collect import (
-    _api_items, collect_api, collect_odcloud_api, collect_portal_file,
+    _api_items, collect_api, collect_odcloud_api, collect_portal_file, collect_zip_member,
     discover_files, resolve_odcloud_api_url, validate_download,
 )
 from yongin_collector.cli import main
@@ -58,6 +60,38 @@ def test_rejects_pk_bytes_disguised_as_xlsx():
         assert "XLSX" in str(exc)
     else:
         raise AssertionError("invalid ZIP bytes must not be stored as XLSX")
+
+
+def test_reviewed_zip_member_preserves_archive_provenance(tmp_path):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("education.csv", b"id,title\n1,course\n")
+        archive.writestr("schedule.csv", b"id,title\n2,event\n")
+    raw_zip = buffer.getvalue()
+    store = Store(tmp_path / "raw", tmp_path / "state")
+    store.save(source_id="portal_csv_123", item_id="file", content=raw_zip,
+               extension="zip", source_url="https://example.org/detail",
+               original_filename="source.zip")
+    source = Source("portal_zip_education", "portal_zip_member",
+                    "https://example.org/detail", "123", zip_marker="education.csv")
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(500))) as client:
+        result = collect_zip_member(source, store, client)
+    assert result["saved"] == 1
+    entry = store.manifest(source.source_id)["items"]["current"]
+    assert entry["response"]["archive_sha256"] == hashlib.sha256(raw_zip).hexdigest()
+    assert (tmp_path / "raw" / source.source_id / entry["filename"]).read_bytes() == b"id,title\n1,course\n"
+
+
+def test_zip_rejects_unsafe_member_path():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("../escape.csv", b"id,title\n1,bad\n")
+    try:
+        validate_download(buffer.getvalue(), "zip")
+    except ValueError as exc:
+        assert "unsafe" in str(exc)
+    else:
+        raise AssertionError("ZIP traversal path must be rejected")
 
 
 def test_mvp_allowlist_has_csv_file_and_api():

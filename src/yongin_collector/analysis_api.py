@@ -7,9 +7,9 @@ import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from .analysis import EXAMPLES, analyze
+from .chat_analysis import EXAMPLES, analyze
 from .store import ROOT
 
 
@@ -18,7 +18,9 @@ app = FastAPI(title="Yongin public-data analysis", version="1.0.0")
 
 
 class QuestionRequest(BaseModel):
-    question: str
+    question: str = Field(min_length=1, max_length=500)
+    conversation_id: str | None = Field(default=None, max_length=80)
+    history: list[dict[str, str]] = Field(default_factory=list, max_length=6)
 
 
 @app.get("/health")
@@ -33,12 +35,14 @@ def question_page() -> FileResponse:
 
 @app.get("/v1/analysis/examples")
 def analysis_examples() -> dict:
-    return {"questions": EXAMPLES, "dataset_id": "giheung_events"}
+    return {"questions": EXAMPLES, "llm_enabled": bool(os.getenv("OPENAI_API_KEY", "").strip())}
 
 
 @app.post("/v1/analyze")
 def analyze_question(request: QuestionRequest) -> dict:
-    return analyze(request.question)
+    history = [m for m in request.history if m.get("role") in ("user", "assistant")
+               and isinstance(m.get("content"), str) and len(m["content"]) <= 500]
+    return analyze(request.question, history, request.conversation_id)
 
 
 @app.post("/ask")
@@ -47,7 +51,7 @@ def ask_via_n8n(request: QuestionRequest) -> dict:
         "http://n8n:5678/webhook/yongin-analysis-v1"
     )
     try:
-        with httpx.Client(timeout=25) as client:
+        with httpx.Client(timeout=35) as client:
             response = client.post(endpoint, json=request.model_dump())
             response.raise_for_status()
             payload = response.json()

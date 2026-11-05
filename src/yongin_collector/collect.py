@@ -63,6 +63,24 @@ def validate_download(content: bytes, extension: str) -> None:
                     raise ValueError("XLSX archive contains corrupt data")
         except zipfile.BadZipFile as exc:
             raise ValueError("XLSX archive is invalid") from exc
+    if extension == "zip":
+        if len(content) > 50_000_000:
+            raise ValueError("ZIP download exceeds size cap")
+        try:
+            with zipfile.ZipFile(io.BytesIO(content)) as archive:
+                members = archive.infolist()
+                if not members or len(members) > 20:
+                    raise ValueError("ZIP member count is invalid")
+                if any(member.is_dir() or Path(member.filename).name != member.filename
+                       or not member.filename.lower().endswith(".csv")
+                       or member.file_size > 30_000_000 for member in members):
+                    raise ValueError("ZIP contains an unsafe or non-CSV member")
+                if sum(member.file_size for member in members) > 50_000_000:
+                    raise ValueError("ZIP uncompressed size exceeds cap")
+                if archive.testzip() is not None:
+                    raise ValueError("ZIP archive contains corrupt data")
+        except zipfile.BadZipFile as exc:
+            raise ValueError("ZIP archive is invalid") from exc
     if extension == "xls" and not content.startswith(bytes.fromhex("D0CF11E0")):
         raise ValueError("XLS signature mismatch")
     if extension == "csv":
@@ -73,12 +91,33 @@ def validate_download(content: bytes, extension: str) -> None:
             decoded = content.decode("utf-8-sig")
         except UnicodeDecodeError:
             decoded = content.decode("cp949")
-        rows = csv.reader(io.StringIO(decoded))
+        rows = csv.reader(io.StringIO(decoded, newline=""))
         header = next(rows, [])
         if len(header) < 2 or not any(True for _ in rows):
             raise ValueError("CSV header or data rows missing")
     if extension == "html" and b"<html" not in content[:4096].lower():
         raise ValueError("HTML signature mismatch")
+
+
+def validate_large_csv_zip(content: bytes) -> None:
+    """Permit reviewed large CSV-only archives with strict path and size bounds."""
+    if len(content) > 50_000_000 or not content.startswith(b"PK\x03\x04"):
+        raise ValueError("large ZIP exceeds compressed size cap or has wrong signature")
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            members = archive.infolist()
+            if not members or len(members) > 20:
+                raise ValueError("large ZIP member count is invalid")
+            if any(member.is_dir() or Path(member.filename).name != member.filename
+                   or not member.filename.lower().endswith(".csv")
+                   or member.file_size > 150_000_000 for member in members):
+                raise ValueError("large ZIP contains unsafe or non-CSV member")
+            if sum(member.file_size for member in members) > 500_000_000:
+                raise ValueError("large ZIP uncompressed size exceeds cap")
+            if archive.testzip() is not None:
+                raise ValueError("large ZIP contains corrupt data")
+    except zipfile.BadZipFile as exc:
+        raise ValueError("large ZIP is invalid") from exc
 
 
 def filename_from_response(response: httpx.Response, fallback: str) -> str:
@@ -150,9 +189,12 @@ def collect_portal_file(source: Source, store: Store, client: httpx.Client,
         download.raise_for_status()
         name = filename_from_response(download, label)
         extension = Path(name).suffix.lower().lstrip(".")
-        if extension not in {"csv", "xls", "xlsx"}:
+        if extension not in {"csv", "xls", "xlsx", "zip"}:
             raise ValueError(f"unexpected file type: {extension or 'none'}")
-        validate_download(download.content, extension)
+        if extension == "zip" and source.allow_large_zip:
+            validate_large_csv_zip(download.content)
+        else:
+            validate_download(download.content, extension)
         current_hash = hashlib.sha256(download.content).hexdigest()
         if store.known(source.source_id, candidate.item_id):
             previous = manifest["items"][candidate.item_id]
@@ -173,6 +215,50 @@ def collect_portal_file(source: Source, store: Store, client: httpx.Client,
         store.save_many(source.source_id, pending)
     return {"source": source.source_id, "found": len(candidates),
             "saved": saved, "unchanged": unchanged}
+
+
+def collect_zip_member(source: Source, store: Store, client: httpx.Client,
+                       refresh_existing: bool = False) -> dict:
+    if not source.portal_id or not source.zip_marker:
+        raise ValueError("ZIP member source is missing its reviewed selector")
+    parent_id = f"portal_csv_{source.portal_id}"
+    parent = Source(parent_id, "portal_file", source.url, source.portal_id,
+                    allow_large_zip=source.allow_large_zip)
+    if refresh_existing or not store.manifest(parent_id)["items"]:
+        collect_portal_file(parent, store, client, refresh_existing=refresh_existing)
+    archives = list(store.manifest(parent_id)["items"].values())
+    if len(archives) != 1 or not archives[0]["filename"].endswith(".zip"):
+        raise ValueError("expected one validated official ZIP archive")
+    archive_meta = archives[0]
+    archive_bytes = (store.raw / parent_id / archive_meta["filename"]).read_bytes()
+    if hashlib.sha256(archive_bytes).hexdigest() != archive_meta["sha256"]:
+        raise ValueError("ZIP archive hash mismatch")
+    if source.allow_large_zip:
+        validate_large_csv_zip(archive_bytes)
+    else:
+        validate_download(archive_bytes, "zip")
+    with zipfile.ZipFile(io.BytesIO(archive_bytes)) as archive:
+        matches = [name for name in archive.namelist() if source.zip_marker in name]
+        if len(matches) != 1:
+            raise ValueError("reviewed CSV member selector is ambiguous or missing")
+        member_name = matches[0]
+        content = archive.read(member_name)
+    validate_download(content, "csv")
+    digest = hashlib.sha256(content).hexdigest()
+    if store.known(source.source_id, "current", digest):
+        return {"source": source.source_id, "found": 1, "saved": 0, "unchanged": 1}
+    store.save(
+        source_id=source.source_id, item_id="current", content=content,
+        extension="csv", source_url=source.url,
+        original_filename=member_name,
+        reference_date=reference_date_from_name(member_name),
+        fingerprint=digest, content_type="text/csv", http_status=200,
+        response_metadata={"archive_sha256": archive_meta["sha256"],
+                           "archive_source_id": parent_id,
+                           "archive_original_filename": archive_meta["original_filename"],
+                           "zip_member_name": member_name},
+    )
+    return {"source": source.source_id, "found": 1, "saved": 1, "unchanged": 0}
 
 
 def _api_items(payload: dict) -> tuple[list[dict], int]:
@@ -416,6 +502,9 @@ def collect(source: Source, store: Store, service_key: str | None,
         if source.kind == "portal_file":
             return collect_portal_file(source, store, client,
                                        refresh_existing=(mode == "daily"))
+        if source.kind == "portal_zip_member":
+            return collect_zip_member(source, store, client,
+                                      refresh_existing=(mode == "daily"))
         if source.kind == "api":
             return collect_api(source, store, client, service_key or "")
         if source.kind == "odcloud_api":

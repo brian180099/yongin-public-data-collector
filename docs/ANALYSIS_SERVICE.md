@@ -1,6 +1,20 @@
 # 용인 생활여가 질문 서비스 MVP
 
-기준: 2026-11-04. 이 문서는 실행된 데이터와 기능만 설명한다.
+## CSV 57종 연결 상태 (2026-11-05)
+
+기존 n8n 질문 Webhook을 통해 새 CSV 57종의 자료 목록, 자료별 전체 적재 건수,
+원본 행 최대 10건과 명시적 텍스트 검색을 조회할 수 있다. 자료명 선택이 모호하면 후보를 요청하며,
+기간·지역 필터와 비교 계산은 컬럼별 분석 계약이 검증되기 전까지 제공하지 않는다.
+`analytics.current_dataset_records`와 `analytics.dataset_sources`를 읽기 전용 역할로
+조회한다. 실제 n8n 경유 `/ask`에서 숲체험일정 8,830건과 출처 응답을 확인했다.
+OpenAI 키가 설정되면 구조화 출력으로 허용된 CSV 데이터셋 ID와 `count`·`records`·
+`catalog` 연산 및 짧은 검색어를 선택한다. 모델이 SQL을 작성하거나 새 데이터셋 ID를 만들 수 없다.
+실제 모델 호출은 키 입력 후 검증해야 한다.
+
+
+기준: 2026-11-05. 표는 초기 기흥구 MVP 검증값이다. 현재 채팅 서비스는
+자동차 등록현황과 공공시설 분석, CSV 57종의 기본 조회도 지원하며, 상세 상태는
+`docs/COLLECTOR_STATUS.md`의 최신 항목을 참조한다.
 
 ## 현재 데이터와 대표 질문
 
@@ -17,13 +31,12 @@ Supabase `analytics.giheung_events`에 기흥구 이벤트 781행이 있다. 고
 | 기흥구 2024년 월별 행사 수를 보여줘 | `event_monthly` | 같은 연도 필터 후 시작 월별 `count(*)`, 없는 월 0 | 답변·표·막대그래프 | 합계 105 |
 
 각 계산은 검증된 고유키 781개를 가진 현재 활성 스냅샷을 사용한다. 시작일
-결측은 연도·월 필터에서 제외한다. 지역 단위는 기흥구 하나이다. 시설 검색
-(`facility_search`)과 구별 비교(`regional_comparison`) 의도는 분류하지만,
-운영 DB에 시설·다른 구 자료가 없어 `unsupported`로 응답한다. 사용자가
+결측은 연도·월 필터에서 제외한다. 행사 지역 단위는 기흥구 하나이다.
+공공시설 검색·구별 비교와 자동차 현황 분석은 별도 읽기 뷰로 처리한다. 사용자가
 연도 없이 월을 묻거나 현재·예정 행사 여부를 묻는 경우는 `clarification`이다.
 
-정의된 SQL은 `src/yongin_collector/analysis.py`의 `event_count`,
-`event_monthly` 두 가지다. 연도·월은 정수 파라미터로 바인딩한다. 사용자 또는
+채팅 서비스의 정의된 SQL은 `src/yongin_collector/chat_analysis.py`에 있다.
+연도·월은 정수 파라미터로 바인딩한다. 사용자 또는
 LLM이 만든 SQL을 실행하지 않는다. 결과 최대 12행, `statement_timeout` 5초,
 DB 연결 제한 15초를 적용한다. 조회 트랜잭션은 읽기 전용이고
 `yongin_analysis_reader`로 `SET ROLE`한다. 이 역할은 `analytics` 뷰만 읽으며
@@ -67,7 +80,7 @@ CLI 게시 후 실행 중인 n8n에는 Webhook 등록을 위해 컨테이너 재
 ## 현재 제한
 
 - LLM 키가 없어 규칙 기반 의도 분류와 계산 결과의 고정 문장을 사용한다.
-  LLM 설명 단계와 정확도 평가는 미구현이다.
+  OpenAI Responses API 연동 코드는 있으나 실제 인증·모델 호출은 미검증이다.
 - 분석 컨테이너는 별도 `yongin_analysis_login`으로 접속하며 읽기 전용
   트랜잭션과 `SET ROLE yongin_analysis_reader`를 적용한다. 수집 컨테이너는
   `yongin_collector_login`으로 접속한다. `.runtime/`은 컨테이너 볼륨으로

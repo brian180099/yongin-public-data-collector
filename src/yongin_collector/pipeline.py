@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import csv
+from collections import Counter
 import hashlib
 import io
 import json
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -137,6 +138,53 @@ def prepare_csv_snapshot(content: bytes, *, unique_key_columns: list[str],
     )
 
 
+def prepare_content_key_csv_snapshot(content: bytes) -> PreparedSnapshot:
+    """Preserve identical rows with hash plus occurrence keys, independent of order.
+
+    Content edits appear as additions and deletion candidates; the source has no
+    verified business identifier from which to infer a modified record.
+    """
+    if len(content) > 30_000_000:
+        raise QualityError("CSV exceeds reviewed 30 MB limit")
+    decoded, encoding = _decode_csv(content)
+    reader = csv.reader(io.StringIO(decoded, newline=""), strict=True)
+    try:
+        headers = [name.strip() for name in next(reader)]
+    except (StopIteration, csv.Error) as exc:
+        raise QualityError("CSV has no valid header") from exc
+    if len(headers) < 2 or any(not name for name in headers) or len(headers) != len(set(headers)):
+        raise QualityError("CSV headers are empty or duplicated")
+    records: dict[str, dict[str, Any]] = {}
+    hashes: dict[str, str] = {}
+    occurrences: Counter[str] = Counter()
+    blank_lines = 0
+    try:
+        for row in reader:
+            if not row:
+                blank_lines += 1
+                continue
+            if len(row) != len(headers) or all(not value.strip() for value in row):
+                raise QualityError("CSV row width or required content is invalid")
+            payload = {key: value.strip() or None for key, value in zip(headers, row)}
+            digest = _canonical_hash(payload)
+            occurrences[digest] += 1
+            record_key = f"{digest}:{occurrences[digest]}"
+            records[record_key] = payload
+            hashes[record_key] = digest
+            if len(records) > 200_000:
+                raise QualityError("CSV exceeds reviewed 200,000 row limit")
+    except csv.Error as exc:
+        raise QualityError("CSV parsing failed") from exc
+    if not records:
+        raise QualityError("CSV has no data rows")
+    return PreparedSnapshot(records=records, hashes=hashes, reference_date=None,
+                            quality={"passed": True, "encoding": encoding,
+                                     "column_count": len(headers), "record_count": len(records),
+                                     "duplicate_row_count": sum(n - 1 for n in occurrences.values()),
+                                     "blank_lines_skipped": blank_lines,
+                                     "key_strategy": "content_hash_occurrence", "headers": headers})
+
+
 def validate_vehicle_snapshot(snapshot: PreparedSnapshot) -> PreparedSnapshot:
     """Reject malformed counts or inconsistent row totals before DB publication."""
     for row in snapshot.records.values():
@@ -255,6 +303,8 @@ def _latest_artifact(store: Store, dataset_id: str) -> tuple[dict, Path]:
     path = store.raw / dataset_id / metadata["filename"]
     if not path.is_file():
         raise PipelineError("manifest artifact is missing")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != metadata["sha256"]:
+        raise QualityError("manifest artifact hash mismatch")
     return metadata, path
 
 
@@ -304,7 +354,8 @@ def list_due_datasets(force: bool = False) -> list[dict[str, Any]]:
         return [dict(row) for row in rows]
 
 
-def run_collection(dataset_id: str, trigger_type: str = "manual") -> dict[str, Any]:
+def run_collection(dataset_id: str, trigger_type: str = "manual",
+                   *, reuse_collected: bool = False) -> dict[str, Any]:
     if trigger_type not in {"manual", "schedule", "retry"}:
         raise ValueError("invalid trigger type")
     with psycopg.connect(
@@ -318,28 +369,50 @@ def run_collection(dataset_id: str, trigger_type: str = "manual") -> dict[str, A
         raise KeyError(dataset_id)
     run_id = _create_run(dataset_id, trigger_type)
     try:
-        if dataset_id not in SOURCES:
+        if dataset_id in SOURCES:
+            source = SOURCES[dataset_id]
+        elif (dataset_id.startswith("portal_csv_") and dataset_id[11:].isdigit()
+              and dataset["metadata"].get("key_strategy") == "content_hash_occurrence"
+              and dataset["source_url"] ==
+              f"https://www.data.go.kr/data/{dataset_id[11:]}/fileData.do"):
+            from .sources import Source
+            source = Source(dataset_id, "portal_file", dataset["source_url"], dataset_id[11:])
+        elif (dataset_id.startswith("portal_zip_")
+              and dataset["metadata"].get("key_strategy") == "content_hash_occurrence"
+              and dataset["metadata"].get("portal_id", "").isdigit()
+              and dataset["source_url"] ==
+              f"https://www.data.go.kr/data/{dataset['metadata']['portal_id']}/fileData.do"):
+            from .sources import Source
+            source = Source(dataset_id, "portal_zip_member", dataset["source_url"],
+                            dataset["metadata"]["portal_id"],
+                            zip_marker=dataset["metadata"]["member_name"],
+                            allow_large_zip=bool(dataset["metadata"].get("large_archive")))
+        else:
             raise PipelineError("dataset has no collector implementation")
-        source = SOURCES[dataset_id]
         store = Store()
         result = collect(
-            source, store, os.getenv("DATA_GO_KR_SERVICE_KEY"), mode="daily"
+            source, store, os.getenv("DATA_GO_KR_SERVICE_KEY"),
+            mode="backfill" if reuse_collected else "daily"
         )
         store.record_checked(dataset_id, result)
         if dataset_id == "public_facilities":
             snapshot, artifacts = prepare_facility_snapshot(store, result)
             metadata = artifacts[0]
-        elif source.kind == "portal_file":
+        elif source.kind in {"portal_file", "portal_zip_member"}:
             metadata, path = _latest_artifact(store, dataset_id)
             if path.suffix.lower() != ".csv":
                 raise PipelineError("operational parser is not implemented for this source")
             raw = path.read_bytes()
-            snapshot = prepare_csv_snapshot(
-                raw,
-                unique_key_columns=list(dataset["unique_key_columns"]),
-                required_columns=list(dataset["required_columns"]),
-                reference_date_column=dataset["reference_date_column"],
-            )
+            snapshot = (prepare_content_key_csv_snapshot(raw)
+                        if dataset["metadata"].get("key_strategy") == "content_hash_occurrence"
+                        else prepare_csv_snapshot(
+                            raw, unique_key_columns=list(dataset["unique_key_columns"]),
+                            required_columns=list(dataset["required_columns"]),
+                            reference_date_column=dataset["reference_date_column"],
+                        ))
+            if snapshot.reference_date is None and metadata.get("reference_date"):
+                snapshot = replace(snapshot, reference_date=date.fromisoformat(
+                    metadata["reference_date"]))
             artifacts = [metadata]
         else:
             raise PipelineError("operational parser is not implemented for this source")

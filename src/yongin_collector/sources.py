@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from .csv_allowlist import CSV_ALLOWLIST, ZIP_CSV_CONTRACTS
+
 
 SEARCH_URL = (
     "https://www.data.go.kr/tcs/dss/selectDataSetList.do?"
@@ -18,6 +20,8 @@ class Source:
     max_files: int = 20
     application_url: str | None = None
     required_fields: tuple[str, ...] = ()
+    zip_marker: str | None = None
+    allow_large_zip: bool = False
 
 
 SOURCES = {
@@ -55,6 +59,25 @@ SOURCES = {
         ),
     ),
 }
+
+# Add only individually reviewed portal IDs. They are not automatic DB targets
+# until a downloaded CSV passes schema/key review and is registered there.
+SOURCES.update({
+    f"portal_csv_{portal_id}": Source(
+        f"portal_csv_{portal_id}", "portal_file",
+        f"https://www.data.go.kr/data/{portal_id}/fileData.do", portal_id,
+    )
+    for portal_id in CSV_ALLOWLIST
+})
+
+SOURCES.update({
+    f"portal_zip_{member_id}": Source(
+        f"portal_zip_{member_id}", "portal_zip_member",
+        f"https://www.data.go.kr/data/{portal_id}/fileData.do", portal_id,
+        zip_marker=marker,
+    )
+    for member_id, (portal_id, marker, _, _) in ZIP_CSV_CONTRACTS.items()
+})
 
 DEFAULT_SOURCE_IDS = (
     "giheung_events", "library_new_books", "public_facilities",

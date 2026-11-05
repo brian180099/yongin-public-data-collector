@@ -6,7 +6,7 @@ services:
     container_name: yongin-collector
     restart: unless-stopped
     env_file:
-      - ./.runtime/collector.env
+      - ./.runtime/local-collector.env
     environment:
       TZ: Asia/Seoul
       YONGIN_DATA_DIR: /app/data
