@@ -140,6 +140,17 @@ n8n 워크플로 `YONGIN_01_공공데이터_수집갱신`에는 키를 넣지 �
 | `vehicle_registrations` | [자동차 등록현황](https://www.data.go.kr/data/3035912/fileData.do) | 포털 공식 CSV 다운로드 | DB 42행 적재·재실행 검증 |
 | `vehicle_registrations_api` | [자동차 등록현황 Open API](https://www.data.go.kr/data/3035912/fileData.do) | 활용신청 후 ODCLOUD JSON | 승인 키 필요 |
 
+자동차 Open API 활용신청 보조 브라우저는 신청 폼과 별도의 공공데이터포털
+계정 탭을 열어 대기 중 60초마다 새로고침한다. 폼 입력값은 유지하며 포털이
+강제로 로그아웃하거나 CAPTCHA를 다시 요청하면 자동 제출하지 않고 중단한다.
+
+```powershell
+.\scripts\run_vehicle_api_selenium.ps1
+```
+
+기본 간격은 60초다. 직접 실행할 때만 `--keepalive-seconds`로 바꿀 수 있으며
+포털 과부하를 막기 위해 30초 미만은 허용하지 않는다.
+
 추가 후보 `suji_programs`는 `--source suji_programs`로 실행할 수 있습니다. 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공하므로 HTML 원본으로 저장하며 CSV라고 표시하지 않습니다. 기존 분석 프로젝트의 데이터셋 목록과 수집기의 MVP 기본 목록은 아직 다릅니다. 최종 3종을 확정할 때 두 저장소의 목록을 맞춰야 합니다.
 
 현재 차이와 상세 파일 식별자, 요청변수, 갱신일 및 저장 규격은

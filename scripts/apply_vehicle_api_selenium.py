@@ -8,14 +8,19 @@ ignored runtime env files.
 The script never submits an application by itself. It opens and inspects the
 official form, then waits for an explicit ``SUBMIT`` line on stdin. Login and
 CAPTCHA, if requested, are completed by the user in the visible Chrome window.
+While the form is waiting, a separate official account tab is refreshed every
+60 seconds so the form fields are not lost to an inactivity refresh.
 """
 
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 import os
+from queue import Empty, Queue
 import sys
+from threading import Thread
 import time
 from pathlib import Path
 
@@ -24,7 +29,9 @@ from selenium import webdriver
 from selenium.common.exceptions import (
     NoAlertPresentException,
     NoSuchElementException,
+    NoSuchWindowException,
     UnexpectedAlertPresentException,
+    WebDriverException,
 )
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
@@ -36,6 +43,8 @@ PROFILE = RUNTIME / "selenium-portal-profile"
 STATUS_PATH = RUNTIME / "vehicle_api_application_status.json"
 DETAIL_URL = "https://www.data.go.kr/data/3035912/fileData.do"
 LOGIN_URL = "https://www.data.go.kr/uim/login/loginView.do"
+KEEPALIVE_URL = "https://www.data.go.kr/iim/api/selectAcounList.do"
+DEFAULT_KEEPALIVE_SECONDS = 60
 
 
 def logged_in(driver: webdriver.Chrome) -> bool:
@@ -135,13 +144,101 @@ def prefill_login(driver: webdriver.Chrome) -> bool:
     return True
 
 
+def _read_stdin(commands: Queue[str]) -> None:
+    commands.put(sys.stdin.readline().strip())
+
+
+def wait_for_submit_with_keepalive(
+    driver: webdriver.Chrome,
+    form_handle: str,
+    interval_seconds: int,
+) -> str:
+    """Wait for stdin while refreshing a separate official account tab."""
+    driver.switch_to.new_window("tab")
+    keepalive_handle = driver.current_window_handle
+    driver.get(KEEPALIVE_URL)
+    driver.switch_to.window(form_handle)
+
+    commands: Queue[str] = Queue(maxsize=1)
+    Thread(target=_read_stdin, args=(commands,), daemon=True).start()
+    next_refresh = time.monotonic() + interval_seconds
+    save_status(
+        "application_form_open_keepalive_active",
+        form_url=driver.current_url,
+        keepalive_interval_seconds=interval_seconds,
+    )
+    print(
+        f"KEEPALIVE_ACTIVE: 별도 계정 탭을 {interval_seconds}초마다 새로고침합니다.",
+        flush=True,
+    )
+
+    while True:
+        try:
+            command = commands.get(timeout=0.5)
+            if keepalive_handle in driver.window_handles:
+                driver.switch_to.window(keepalive_handle)
+                driver.close()
+            driver.switch_to.window(form_handle)
+            return command
+        except Empty:
+            pass
+
+        if time.monotonic() < next_refresh:
+            continue
+        refreshed_at = datetime.now().astimezone().isoformat(timespec="seconds")
+        try:
+            driver.switch_to.window(keepalive_handle)
+            driver.refresh()
+            WebDriverWait(driver, 20).until(
+                lambda current: current.find_elements(By.TAG_NAME, "body")
+            )
+            if not logged_in(driver):
+                save_status(
+                    "session_expired",
+                    form_url=driver.current_url,
+                    keepalive_interval_seconds=interval_seconds,
+                    last_keepalive_at=refreshed_at,
+                )
+                print(
+                    "SESSION_EXPIRED: 포털이 로그아웃했습니다. 다시 로그인하세요.",
+                    flush=True,
+                )
+                return "SESSION_EXPIRED"
+            driver.switch_to.window(form_handle)
+            save_status(
+                "application_form_open_keepalive_active",
+                form_url=driver.current_url,
+                keepalive_interval_seconds=interval_seconds,
+                last_keepalive_at=refreshed_at,
+            )
+            print(f"KEEPALIVE_OK: {refreshed_at}", flush=True)
+        except (NoSuchWindowException, WebDriverException):
+            save_status(
+                "keepalive_failed",
+                keepalive_interval_seconds=interval_seconds,
+                last_keepalive_at=refreshed_at,
+            )
+            print("KEEPALIVE_FAILED: 브라우저 탭 상태를 확인하세요.", flush=True)
+            return "KEEPALIVE_FAILED"
+        finally:
+            next_refresh = time.monotonic() + interval_seconds
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--debugger-address",
         help="attach to the existing Selenium Chrome, for example 127.0.0.1:9222",
     )
+    parser.add_argument(
+        "--keepalive-seconds",
+        type=int,
+        default=DEFAULT_KEEPALIVE_SECONDS,
+        help="refresh an isolated portal account tab while waiting (default: 60)",
+    )
     args = parser.parse_args()
+    if args.keepalive_seconds < 30:
+        parser.error("--keepalive-seconds must be at least 30")
     PROFILE.mkdir(parents=True, exist_ok=True)
     options = webdriver.ChromeOptions()
     if args.debugger_address:
@@ -195,6 +292,7 @@ def main() -> int:
     new_handles = set(driver.window_handles) - old_handles
     if new_handles:
         driver.switch_to.window(new_handles.pop())
+    form_handle = driver.current_window_handle
     save_status("application_form_open", form_url=driver.current_url)
     print(
         json.dumps(
@@ -213,7 +311,11 @@ def main() -> int:
         "WAITING_FOR_SUBMIT: 검토 후 표준입력으로 SUBMIT을 보내야 제출합니다.",
         flush=True,
     )
-    command = sys.stdin.readline().strip()
+    command = wait_for_submit_with_keepalive(
+        driver, form_handle, args.keepalive_seconds
+    )
+    if command in {"SESSION_EXPIRED", "KEEPALIVE_FAILED"}:
+        return 4
     if command != "SUBMIT":
         save_status("not_submitted", form_url=driver.current_url)
         print("NOT_SUBMITTED", flush=True)

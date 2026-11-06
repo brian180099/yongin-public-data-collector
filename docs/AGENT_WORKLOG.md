@@ -130,3 +130,17 @@
 - 커밋: 이 항목 작성 시점 미커밋.
 - 검증: 구 Webhook HTTP 404, 새 분석 Webhook HTTP 200·숲체험일정 8,830건, 수집 워크플로 활성 상태. `docker compose config --quiet` 통과, 전체 테스트 60개 통과. 원본·현재 레코드는 수정하지 않았다.
 - 다음 작업자에게: 질문 답변은 별도 `LG_AX_개인 프로젝트`의 `localhost:8501`과 `YNGN03QuestionAgentV1`만 사용한다. 구 `yongin-analysis` 서비스와 `YNGN02AnalysisV1`은 다시 게시·실행하지 말 것.
+
+### 2026-11-06 12:29 KST · Codex
+
+- 요약: 공공데이터포털 로그인 대기 중 세션 만료를 줄이기 위해 자동차 API
+  활용신청 Selenium 보조기에 별도 계정 탭 60초 주기 새로고침을 추가했다.
+  신청 폼 탭은 새로고침하지 않아 입력값을 유지한다.
+- 변경 파일: `scripts/apply_vehicle_api_selenium.py`, `README.md`,
+  `docs/AGENT_WORKLOG.md`.
+- 커밋: 이 항목 작성 시점 미커밋.
+- 검증: Python 구문 검사와 `--help` 실행 성공, 전체 `pytest` 60개 통과,
+  `git diff --check` 오류 없음. 실제 포털 세션의 60초 유지 여부는 로그인된
+  브라우저 장시간 실행 전이므로 미검증.
+- 전달 사항: 포털의 절대 세션 만료·강제 로그아웃·CAPTCHA는 우회하지 않는다.
+  감지 시 상태 파일에 `session_expired` 또는 `keepalive_failed`를 기록하고 중단한다.
