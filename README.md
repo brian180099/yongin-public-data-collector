@@ -151,6 +151,18 @@ n8n 워크플로 `YONGIN_01_공공데이터_수집갱신`에는 키를 넣지 �
 기본 간격은 60초다. 직접 실행할 때만 `--keepalive-seconds`로 바꿀 수 있으며
 포털 과부하를 막기 위해 30초 미만은 허용하지 않는다.
 
+창 없이 세션 유지 기능을 실행하려면 먼저 위 명령으로 화면 표시 모드에서
+CAPTCHA 로그인을 완료하고 Chrome을 정상 종료한 다음 아래 명령을 실행한다.
+
+```powershell
+.\scripts\run_vehicle_api_selenium.ps1 -Headless
+```
+
+headless 실행 중에는 CAPTCHA를 입력할 수 없다. 저장된 포털 세션이 없거나
+만료되었으면 `HEADLESS_LOGIN_REQUIRED`로 종료하므로 화면 표시 모드에서 다시
+로그인해야 한다. 동일한 Selenium 프로필을 동시에 두 Chrome 프로세스에서 열 수
+없으므로 화면 표시 Chrome을 닫은 뒤 headless 모드를 시작한다.
+
 추가 후보 `suji_programs`는 `--source suji_programs`로 실행할 수 있습니다. 현재 포털에서 CSV 파일 버튼 대신 기관 페이지 바로가기를 제공하므로 HTML 원본으로 저장하며 CSV라고 표시하지 않습니다. 기존 분석 프로젝트의 데이터셋 목록과 수집기의 MVP 기본 목록은 아직 다릅니다. 최종 3종을 확정할 때 두 저장소의 목록을 맞춰야 합니다.
 
 현재 차이와 상세 파일 식별자, 요청변수, 갱신일 및 저장 규격은

@@ -9,7 +9,9 @@ The script never submits an application by itself. It opens and inspects the
 official form, then waits for an explicit ``SUBMIT`` line on stdin. Login and
 CAPTCHA, if requested, are completed by the user in the visible Chrome window.
 While the form is waiting, a separate official account tab is refreshed every
-60 seconds so the form fields are not lost to an inactivity refresh.
+60 seconds so the form fields are not lost to an inactivity refresh. A
+headless mode is available only after a reusable portal session has already
+been created through the visible CAPTCHA login flow.
 """
 
 from __future__ import annotations
@@ -236,20 +238,43 @@ def main() -> int:
         default=DEFAULT_KEEPALIVE_SECONDS,
         help="refresh an isolated portal account tab while waiting (default: 60)",
     )
+    parser.add_argument(
+        "--headless",
+        action="store_true",
+        help=(
+            "run Chrome without a window; requires a portal session previously "
+            "saved by a visible login"
+        ),
+    )
     args = parser.parse_args()
     if args.keepalive_seconds < 30:
         parser.error("--keepalive-seconds must be at least 30")
+    if args.debugger_address and args.headless:
+        parser.error("--headless cannot change an already running Chrome session")
     PROFILE.mkdir(parents=True, exist_ok=True)
     options = webdriver.ChromeOptions()
     if args.debugger_address:
         options.debugger_address = args.debugger_address
     else:
         options.add_argument(f"--user-data-dir={PROFILE.resolve()}")
-        options.add_argument("--start-maximized")
-        options.add_experimental_option("detach", True)
+        if args.headless:
+            options.add_argument("--headless=new")
+            options.add_argument("--window-size=1920,1080")
+        else:
+            options.add_argument("--start-maximized")
+            options.add_experimental_option("detach", True)
     driver = webdriver.Chrome(options=options)
     driver.get(DETAIL_URL)
     if not logged_in(driver):
+        if args.headless:
+            save_status("headless_login_required")
+            print(
+                "HEADLESS_LOGIN_REQUIRED: 먼저 화면 표시 모드에서 CAPTCHA 로그인을 "
+                "완료한 뒤 브라우저를 닫고 다시 실행하세요.",
+                flush=True,
+            )
+            driver.quit()
+            return 2
         credentials_prefilled = prefill_login(driver)
         save_status("login_required")
         if credentials_prefilled:

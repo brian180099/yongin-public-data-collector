@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param()
+param(
+    [switch]$Headless
+)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -18,7 +20,11 @@ $credential = Import-Clixml -LiteralPath $credentialPath
 $env:DATA_GO_KR_PORTAL_USERNAME = $credential.UserName
 $env:DATA_GO_KR_PORTAL_PASSWORD = $credential.GetNetworkCredential().Password
 try {
-    & $pythonPath $automationPath
+    $automationArgs = @($automationPath)
+    if ($Headless) {
+        $automationArgs += '--headless'
+    }
+    & $pythonPath @automationArgs
     exit $LASTEXITCODE
 }
 finally {

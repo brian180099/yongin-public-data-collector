@@ -152,3 +152,10 @@
 - 검증: `KEEPALIVE_ACTIVE` 이후 `KEEPALIVE_OK: 2026-11-06T14:57:00+09:00` 로그를 확인했다. 실행 중인 Selenium/Python 프로세스와 전용 Chrome 창이 유지되는 동안에만 동작한다.
 - 제한: 포털의 절대 세션 만료, 서버 측 강제 로그아웃, CAPTCHA 재인증은 우회하지 않는다. 감지 시 `session_expired` 또는 `keepalive_failed`로 기록하고 중단한다.
 
+### 2026-11-06 15:32 KST · Codex
+
+- 요약: 공공데이터포털 세션 유지 Selenium 실행기에 창 없는 Chrome `--headless` 모드와 PowerShell `-Headless` 옵션을 추가했다. 저장된 로그인 세션이 없거나 만료된 경우 CAPTCHA를 우회하지 않고 `HEADLESS_LOGIN_REQUIRED`로 종료한다.
+- 변경 파일: `scripts/apply_vehicle_api_selenium.py`, `scripts/run_vehicle_api_selenium.ps1`, `README.md`, `docs/AGENT_WORKLOG.md`.
+- 검증: Python 구문 검사, PowerShell 파서 검사, CLI 도움말과 `--debugger-address`/`--headless` 충돌 검사를 통과했고 전체 `pytest` 60개가 통과했다. 기존 visible 유지 프로세스는 `2026-11-06T15:32:25+09:00`까지 계속 새로고침 중임을 확인했다.
+- 미검증: 현재 visible Chrome이 전용 프로필을 사용 중이므로 프로필 충돌과 로그인 중단을 피하기 위해 실제 headless Chrome 실행은 수행하지 않았다. headless 실행 전 visible Chrome을 종료해야 하며, 포털 세션이 보존되지 않으면 화면 표시 모드에서 다시 로그인해야 한다.
+
