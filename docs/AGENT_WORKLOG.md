@@ -144,3 +144,11 @@
   브라우저 장시간 실행 전이므로 미검증.
 - 전달 사항: 포털의 절대 세션 만료·강제 로그아웃·CAPTCHA는 우회하지 않는다.
   감지 시 상태 파일에 `session_expired` 또는 `keepalive_failed`를 기록하고 중단한다.
+
+### 2026-11-06 14:57 KST · Codex
+
+- 요약: 기존 Selenium 전용 Chrome 세션에 다시 연결해 공공데이터포털 로그인 완료 후 별도 계정 탭을 60초마다 새로고침하는 세션 유지 루프를 실행했다. 신청서 탭은 새로고침하지 않으며 최종 신청 제출도 수행하지 않았다.
+- 변경 파일: `docs/AGENT_WORKLOG.md`.
+- 검증: `KEEPALIVE_ACTIVE` 이후 `KEEPALIVE_OK: 2026-11-06T14:57:00+09:00` 로그를 확인했다. 실행 중인 Selenium/Python 프로세스와 전용 Chrome 창이 유지되는 동안에만 동작한다.
+- 제한: 포털의 절대 세션 만료, 서버 측 강제 로그아웃, CAPTCHA 재인증은 우회하지 않는다. 감지 시 `session_expired` 또는 `keepalive_failed`로 기록하고 중단한다.
+
