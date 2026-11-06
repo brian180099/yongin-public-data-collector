@@ -122,3 +122,11 @@
   staged diff 비밀정보 패턴 없음, `git diff --check`는 빈 줄 경고 외 오류 없음.
 - 전달 사항: 원격에 별도 작업 브랜치가 생기면 fetch 후 `main`과 차이를 먼저
   검토하고, 현재 운영 변경을 덮어쓰지 않도록 병합할 것.
+
+### 2026-11-06 12:21 KST · Codex
+
+- 요약: 최신 사용자 지시에 맞춰 수집 저장소를 원본 수집·검증·적재 역할로 다시 한정했다. 구 분석 Webhook `YNGN02AnalysisV1`을 게시 해제하고 `yongin-analysis` 컨테이너를 중지했으며, Compose 정의에서 분석 서비스를 제거했다. 구 워크플로 JSON은 비활성 기록으로 보존했다.
+- 변경 파일: `README.md`, `compose.collector.yaml`, `workflows/n8n/yongin-analysis-v1.json`, `docs/COLLECTOR_STATUS.md`, `docs/LOCAL_POSTGRESQL.md`, `docs/AGENT_WORKLOG.md`.
+- 커밋: 이 항목 작성 시점 미커밋.
+- 검증: 구 Webhook HTTP 404, 새 분석 Webhook HTTP 200·숲체험일정 8,830건, 수집 워크플로 활성 상태. `docker compose config --quiet` 통과, 전체 테스트 60개 통과. 원본·현재 레코드는 수정하지 않았다.
+- 다음 작업자에게: 질문 답변은 별도 `LG_AX_개인 프로젝트`의 `localhost:8501`과 `YNGN03QuestionAgentV1`만 사용한다. 구 `yongin-analysis` 서비스와 `YNGN02AnalysisV1`은 다시 게시·실행하지 말 것.

@@ -1,7 +1,7 @@
 {
   "id": "YNGN02AnalysisV1",
   "name": "YONGIN_02_생활여가_질문분석",
-  "active": true,
+  "active": false,
   "settings": {"executionOrder": "v1", "timezone": "Asia/Seoul"},
   "nodes": [
     {

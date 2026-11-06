@@ -1,5 +1,12 @@
 # 수집·n8n 구축 상태
 
+## 2026-11-06 12:21 질문 분석 경로 분리
+
+- 최신 사용자 결정에 따라 이 저장소는 원본 수집·검증·적재만 운영한다. 질문 분석 웹은 별도 `LG_AX_개인 프로젝트`의 `http://localhost:8501`이다.
+- `YNGN02AnalysisV1` Webhook을 n8n에서 게시 해제하고 `yongin-analysis` 컨테이너를 중지했다. `compose.collector.yaml`에서 해당 분석 서비스를 제거하고 `workflows/n8n/yongin-analysis-v1.json`은 비활성 기록으로 보존했다.
+- 전환 후 구 Webhook은 HTTP 404, 별도 분석 프로젝트의 `yongin-question-agent-v1`은 HTTP 200과 숲체험일정 8,830건을 반환했다. 수집 워크플로 `YNGN01CollectWk1`은 활성 상태로 유지했다.
+- 아래의 Supabase 질문 분석 통합 기록은 전환 전 기록이다. Supabase 수집 원본·현재 레코드는 변경하지 않았다.
+
 기준일: 2026-11-06 (Asia/Seoul)
 
 ## 2026-11-06 Supabase 질문·수집 운영 통합

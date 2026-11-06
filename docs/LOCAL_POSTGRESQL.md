@@ -1,8 +1,10 @@
 # 용인시 제공 CSV 로컬 적재
 
-> **갱신(2026-11-06):** 현재 운영 DB는 다시 **Supabase**다. 웹 응답과 n8n
-> 정기 수집은 Supabase `collector`·`analytics` 스키마를 사용한다. 아래의 로컬
-> PostgreSQL 적재분은 **보존용 스냅샷**으로 남겨 두며, 현재 운영 경로가 아니다.
+> 2026-11-06 현재 질문 분석 웹은 `http://localhost:8501`이며 전용 n8n Webhook `yongin-question-agent-v1`을 사용한다. 이 문서의 `yongin-analysis-v1` 경로 설명은 이전 운영 기록이다.
+
+> **갱신(2026-11-06):** 정기 수집의 운영 DB는 **Supabase**다. 별도 분석 웹은
+> 로컬 스냅샷과 Supabase의 마지막 정상 적재 시각을 비교해 자료별 조회 DB를 고른다.
+> 아래의 로컬 PostgreSQL 대량 적재분은 수집기의 자동 갱신 대상이 아니다.
 > 최신 운영 상태는 [COLLECTOR_STATUS.md](COLLECTOR_STATUS.md)와
 > [README.md](../README.md)를 기준으로 한다. 이 문서는 로컬 대량 적재 절차의
 > 기록이다.
