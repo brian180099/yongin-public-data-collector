@@ -5,8 +5,8 @@ import os
 import re
 
 import httpx
-import psycopg
-from psycopg.rows import dict_row
+
+from .analysis_db import analysis_pool
 
 
 STOPWORDS = ("경기도", "용인시", "용인", "홈페이지", "정보", "관련", "데이터", "알려줘",
@@ -122,7 +122,7 @@ def analyze_csv(question: str, request_id: str, conversation_id: str | None,
     if re.search(r"수원시|성남시|서울시|화성시|안양시|삭제|수정|업데이트|DROP|INSERT|UPDATE|DELETE",
                  question, re.I):
         return result
-    with psycopg.connect(dsn, connect_timeout=10, row_factory=dict_row) as conn:
+    with analysis_pool(dsn).connection() as conn:
         with conn.transaction():
             with conn.cursor() as cursor:
                 cursor.execute("set transaction read only")

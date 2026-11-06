@@ -67,3 +67,46 @@
   Codex 항목이 없다. `AGENTS.md` 범위 지침과 Supabase 등록 자료(홈페이지
   접속통계 등 범위 밖 포함, 빈 자료 32개)가 여전히 불일치. 이 32개의
   "재적재 대상 vs 등록 해제 대상" 구분과 범위 지침 정합은 다음 작업으로 남김.
+
+### 2026-11-06 12:06 KST · Claude Code
+
+- 요약: 실제 n8n·컨테이너를 라이브로 확인하고, Codex용 작업 지시 핸드오프
+  `docs/CODEX_HANDOFF.md`를 작성했다.
+- 변경 파일: `docs/CODEX_HANDOFF.md`(신규), `docs/AGENT_WORKLOG.md`.
+- 커밋: 미커밋
+- 검증(라이브):
+  - n8n HTTP 200, YONGIN 워크플로 3개 모두 active=True
+    (YNGN01→yongin-collector:8080, YNGN02 webhook yongin-analysis-v1→yongin-analysis:8080,
+    YNGN03 webhook yongin-question-agent-v1→yongin-question-agent:8091).
+  - 컨테이너 가동: yongin-collector/analysis(healthy), yongin-question-agent/web,
+    yongin-local-postgres(healthy).
+  - 두 분석 Webhook POST 종단 응답 확인.
+- 발견(불일치):
+  - 분석 스택 2개(yongin-analysis=Supabase, yongin-question-agent=로컬 PG)가 동시 active.
+    LOCAL_POSTGRESQL.md의 "yongin-analysis 중지" 서술과 모순 → 운영 경로 단일화 필요.
+  - "숲체험일정 몇 건이야?" 실호출 시 문서의 8,830건이 아니라 yongin-analysis는
+    카탈로그(csv_catalog), yongin-question-agent는 clarification 반환 → 의도 분류 불안정.
+- 전달 사항: 상세 지시는 `docs/CODEX_HANDOFF.md`의 P0~P3 참조. 11-06 코드 변경분은
+  여전히 미커밋이며 Codex가 직접 커밋·로그 기록할 것.
+
+### 2026-11-06 12:12 KST · Codex
+
+- 요약: Supabase 수집·분석 운영 경로, 대표 질문 규칙 처리, 분석 연결 풀,
+  n8n 정의와 웹 문서를 검토했다. 중복 로컬 분석 경로 `YNGN03`을 백업 후
+  게시 해제하고 이전 질문 컨테이너의 자동 재시작을 해제·중지해 8090 웹과
+  `YNGN02` Supabase 분석 경로로 단일화했다.
+- 변경 파일: `README.md`, `compose.collector.yaml`, `docs/COLLECTOR_STATUS.md`,
+  `docs/AGENT_WORKLOG.md`, `docs/CODEX_HANDOFF.md`, `pyproject.toml`,
+  `requirements.lock`, `src/yongin_collector/analysis_db.py`,
+  `src/yongin_collector/chat_analysis.py`, `src/yongin_collector/csv_analysis.py`,
+  `src/yongin_collector/static/index.html`, `tests/test_chat_analysis.py`,
+  `tests/test_pipeline.py`, `workflows/n8n/yongin-analysis-v1.json`,
+  `workflows/n8n/yongin-weekly-collector.json`, `scripts/apply_vehicle_api_selenium.py`,
+  `scripts/configure_portal_credentials.ps1`, `scripts/run_vehicle_api_selenium.ps1`.
+- 커밋: 이 항목을 포함해 커밋 예정.
+- 검증: `pytest` 60개 통과. 수집·분석 컨테이너 healthy, 두 컨테이너 모두
+  Supabase 전용 DSN 사용 확인. 활성 n8n은 `YNGN01`·`YNGN02`, `YNGN03`은
+  비활성. `yongin-analysis-v1` Webhook에서 숲체험일정 8,830건과 출처 1건을
+  실제 확인했고 `yongin-question-agent-v1` Webhook은 비활성 응답을 확인했다.
+- 전달 사항: Supabase에 현재 레코드가 없는 등록 자료 32개의 재적재/등록 해제
+  분류와 자동차 Open API 활용신청 최종 제출·승인은 아직 완료되지 않았다.

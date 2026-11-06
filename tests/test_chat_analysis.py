@@ -22,6 +22,16 @@ def test_followup_uses_recent_context(monkeypatch):
     assert plan_question("그중 기흥구 시설 찾아줘", newer)[0]["query_id"] == "facility_search"
 
 
+def test_known_mvp_question_does_not_wait_for_model(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "dummy")
+    monkeypatch.setattr(
+        "yongin_collector.chat_analysis._llm",
+        lambda *_: (_ for _ in ()).throw(AssertionError("model must not be called")),
+    )
+    plan, mode = plan_question("구별 공공시설 수를 비교해줘")
+    assert (plan["query_id"], mode) == ("facility_by_district", "rules")
+
+
 def test_invalid_model_plan_cannot_choose_sql_or_arbitrary_region(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "dummy")
     monkeypatch.setattr("yongin_collector.chat_analysis._llm",

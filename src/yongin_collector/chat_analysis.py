@@ -8,9 +8,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import httpx
-import psycopg
-from psycopg.rows import dict_row
 
+from .analysis_db import analysis_pool
 from .store import ROOT
 from .csv_analysis import analyze_csv
 
@@ -120,14 +119,11 @@ def plan_question(question, history=None):
             or re.search(r"수원시|성남시|서울시|화성시|안양시", question)):
         raw, interpreter = {"query_id": "unsupported"}, "validation"
     elif os.getenv("OPENAI_API_KEY", "").strip():
-        preliminary = _rules(question, history)
-        if preliminary.get("query_id") == "unsupported":
-            raw, interpreter = preliminary, "rules"
-        else:
-            try:
-                raw, interpreter = _llm(question, history), "llm"
-            except (httpx.HTTPError, ValueError, KeyError, TypeError):
-                raw, interpreter = preliminary, "rules"
+        # Known MVP intents are fully bounded by deterministic rules. Calling
+        # the model again would add latency without changing the allowed SQL.
+        # Generic reviewed CSV questions still use the LLM in ``analyze_csv``
+        # to choose a dataset and a validated query plan.
+        raw, interpreter = _rules(question, history), "rules"
     else:
         raw, interpreter = _rules(question, history), "rules"
     query = raw.get("query_id")
@@ -269,7 +265,7 @@ def analyze(question, history=None, conversation_id=None):
         dsn = os.getenv("SUPABASE_ANALYSIS_DB_URL") or os.getenv("SUPABASE_DB_URL")
         if not dsn:
             raise RuntimeError("database is not configured")
-        with psycopg.connect(dsn, connect_timeout=10, row_factory=dict_row) as conn:
+        with analysis_pool(dsn).connection() as conn:
             with conn.transaction():
                 with conn.cursor() as cursor:
                     cursor.execute("set transaction read only")

@@ -169,7 +169,7 @@ def test_weekly_n8n_workflow_has_connected_operational_nodes():
     )
     names = {node["name"] for node in workflow["nodes"]}
     assert workflow["name"] == "YONGIN_01_공공데이터_수집갱신"
-    assert workflow["active"] is False
+    assert workflow["active"] is True
     assert workflow["settings"]["timezone"] == "Asia/Seoul"
     assert len(workflow["nodes"]) == 16
     assert {

@@ -329,7 +329,7 @@
       "main": [[{"node": "전체 결과 취합", "type": "main", "index": 0}]]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "timezone": "Asia/Seoul"
