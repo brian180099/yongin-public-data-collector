@@ -1,5 +1,12 @@
 # 용인시 제공 CSV 로컬 적재
 
+> **갱신(2026-11-06):** 현재 운영 DB는 다시 **Supabase**다. 웹 응답과 n8n
+> 정기 수집은 Supabase `collector`·`analytics` 스키마를 사용한다. 아래의 로컬
+> PostgreSQL 적재분은 **보존용 스냅샷**으로 남겨 두며, 현재 운영 경로가 아니다.
+> 최신 운영 상태는 [COLLECTOR_STATUS.md](COLLECTOR_STATUS.md)와
+> [README.md](../README.md)를 기준으로 한다. 이 문서는 로컬 대량 적재 절차의
+> 기록이다.
+
 2026-11-05 기준 공공데이터포털 파일데이터에서 `용인`, `용인시`를 검색해 중복을 제거하고, CSV 표시 자료 중 제공기관이 정확히 `경기도 용인시`인 자료만 대상으로 삼았다. 검색 결과는 고유 자료 384종, CSV 표시 자료 348종, 이 중 용인시 제공 281종이다. 다른 제공기관의 67종은 사용자의 범위 선택에 따라 제외했다. 검색 목록은 Git 제외 경로 `data/state/portal_search_inventory.json`에 보관한다.
 
 Supabase Free 인스턴스의 기존 원본·현재 레코드·변경 이력은 보존했다. 추가 대량 적재는 중단하고, 그 시점의 DB를 로컬 PostgreSQL로 복제한 다음 로컬에 적재한다. 두 DB는 자동 동기화되지 않는다. 웹과 n8n 분석 경로는 로컬 DB의 별도 읽기 전용 로그인 `yongin_analysis_login`을 사용한다. 수집·적재는 로컬 쓰기 로그인 `yongin_collector_login`을 사용한다.

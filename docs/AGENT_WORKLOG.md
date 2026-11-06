@@ -41,3 +41,29 @@
   (용인시 제공 CSV 281종을 로컬 PostgreSQL에 적재, Supabase 추가 쓰기 중단)가
   서로 맞지 않는다. 사용자가 어느 쪽을 기준으로 할지 정하기 전에는 지침을
   임의로 바꾸지 않는다.
+
+### 2026-11-06 11:29 KST · Claude Code
+
+- 요약: 사용자가 운영 DB 정본을 **Supabase**로 확정했다. (1) Supabase를 직접
+  읽기 전용 조회해 저장 상태를 확인했고, (2) 미커밋 상태이던 11-06 변경분
+  (운영 DB를 로컬→Supabase 복귀, 분석 서비스 통합, 연결 풀 도입, LLM 호출
+  축소)의 테스트를 실제 실행해 검증했으며, (3) 로컬 운영이라고 기술돼 있던
+  문서 두 건에 Supabase 복귀 갱신 배너를 추가했다.
+- 변경 파일: `docs/LOCAL_POSTGRESQL.md`, `docs/BULK_CSV_EXPANSION.md`
+  (각 상단에 2026-11-06 운영 경로 갱신 배너 추가), `docs/AGENT_WORKLOG.md`.
+- 커밋: 미커밋
+- 검증:
+  - Supabase 조회 — 등록 자료 278개(active 60), 현재 레코드 262,912행,
+    change_history 262,912건, raw_artifacts 253건. collection_runs
+    success 246·no_change 13·failed 5·running 1. 실패 5건은 모두 11-04
+    `giheung_events` 초기 진단분으로 데이터 손실 아님. `running` 1건
+    (`portal_csv_15171160`)은 이후 success 기준 적재 16행 완료, 활성 락 없음.
+    등록됐으나 레코드 0행인 자료 32개 발견(원인 미분류).
+  - `pytest` — **60 passed, 1 warning in 15.45s** (문서의 "60개 통과" 사실
+    확인). `psycopg_pool 3.3.3` 설치 확인, 신규 모듈 import 정상.
+- 미검증: 두 Docker 컨테이너 Supabase 재연결·건강상태, n8n 워크플로 교체·게시,
+  n8n 종단 응답 시간(~4.9s/~2.1s), n8n 경유 응답 건수. Docker·n8n 미기동.
+- 전달 사항: 11-06 변경분(Codex 추정)은 아직 **미커밋**이며 이 로그에
+  Codex 항목이 없다. `AGENTS.md` 범위 지침과 Supabase 등록 자료(홈페이지
+  접속통계 등 범위 밖 포함, 빈 자료 32개)가 여전히 불일치. 이 32개의
+  "재적재 대상 vs 등록 해제 대상" 구분과 범위 지침 정합은 다음 작업으로 남김.
