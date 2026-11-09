@@ -159,3 +159,9 @@
 - 검증: Python 구문 검사, PowerShell 파서 검사, CLI 도움말과 `--debugger-address`/`--headless` 충돌 검사를 통과했고 전체 `pytest` 60개가 통과했다. 기존 visible 유지 프로세스는 `2026-11-06T15:32:25+09:00`까지 계속 새로고침 중임을 확인했다.
 - 미검증: 현재 visible Chrome이 전용 프로필을 사용 중이므로 프로필 충돌과 로그인 중단을 피하기 위해 실제 headless Chrome 실행은 수행하지 않았다. headless 실행 전 visible Chrome을 종료해야 하며, 포털 세션이 보존되지 않으면 화면 표시 모드에서 다시 로그인해야 한다.
 
+### 2026-11-09 10:50 KST · Codex
+
+- 요약: 로컬 최신본과 GitHub 원격 상태를 다시 fetch해 비교했다. 최신 기능 브랜치 `feat/headless-portal-keepalive`는 원격에 존재하며 확인 시점의 로컬·원격 커밋이 `26d7085`로 일치했고 작업 트리도 깨끗했다.
+- 변경 파일: `docs/AGENT_WORKLOG.md`.
+- 확인 사항: 로컬 `main`의 `2bfcd71`은 `origin/main`보다 1개 앞서 있지만 최신 기능 브랜치의 선행 커밋으로 GitHub에는 이미 보존되어 있다. 기능 브랜치를 `main`에 임의 병합하거나 force push하지 않았다.
+
